@@ -1,0 +1,46 @@
+# Self-contained stack: Postgres + the monitoring service.
+#
+# If you'd rather use an existing Postgres (e.g. your local ezy-postgres on
+# :42016), delete the `postgres` service and point the app's PG* env at it.
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: whatsapp_manager
+    ports:
+      - "5433:5432" # host 5433 to avoid clashing with other local Postgres
+    volumes:
+      - wa_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d whatsapp_manager"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: whatsapp_manager
+      ENABLE_OUTBOUND: "false"
+      # API_KEY: "change-me" # uncomment to require x-api-key on the REST API
+    ports:
+      - "3000:3000"
+    volumes:
+      - wa_session:/app/.wwebjs_auth # persist WhatsApp login across restarts
+    restart: unless-stopped
+
+volumes:
+  wa_pgdata:
+  wa_session:

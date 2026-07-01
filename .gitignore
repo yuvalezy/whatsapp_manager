@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.local
+
+# WhatsApp Web session (contains your login — never commit)
+.wwebjs_auth/
+.wwebjs_cache/
+
+# logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
