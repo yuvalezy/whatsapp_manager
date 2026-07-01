@@ -1,0 +1,286 @@
+{
+  "info": {
+    "_postman_id": "b7f3a1c2-9d4e-4a6b-8c11-wa-manager-0001",
+    "name": "WhatsApp Manager",
+    "description": "REST API for the personal WhatsApp Manager monitoring service.\n\n## Setup\n1. Import this collection (and optionally the `WhatsApp Manager (local)` environment).\n2. Set the `baseUrl` variable (default `http://localhost:3000`).\n3. If you set `API_KEY` on the server, also set the `apiKey` variable — it is sent as `x-api-key` on every request. `/health` is always public.\n\n## Typical flow\n1. **GET /status** — confirm the client is `READY` (scan the QR first if not).\n2. **POST /whitelist** — allow a phone number (digits + country code, no `+`).\n3. Send a WhatsApp message **from that number** to your linked account.\n4. **GET /messages** — see it captured. Non-whitelisted traffic never appears here; it only bumps the `ignored` counters in `/status`.\n\n## Safety\nOutbound is disabled by default (`ENABLE_OUTBOUND=false`); `POST /outbound/send` returns **403** until explicitly enabled. It is rate-limited, single-recipient, and whitelist-restricted — never for bulk.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "key", "value": "x-api-key", "type": "string" },
+      { "key": "value", "value": "{{apiKey}}", "type": "string" },
+      { "key": "in", "value": "header", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "apiKey", "value": "", "type": "string" },
+    { "key": "number", "value": "14155550100", "type": "string" },
+    { "key": "label", "value": "test contact", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('status ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Liveness probe. Always public (no API key required). Returns `{ status, uptime, state }` where `state` is the WhatsApp connection state."
+          },
+          "response": []
+        },
+        {
+          "name": "Root (endpoint index)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": ["{{baseUrl}}"],
+              "path": [""]
+            },
+            "description": "Service info + list of available endpoints."
+          },
+          "response": []
+        },
+        {
+          "name": "Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "console.log('connection state:', d.state, '| whitelist:', d.whitelistCount, '| ignoredTotal:', d.ignoredTotal);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["status"]
+            },
+            "description": "Connection + monitoring snapshot: `state`, `pushname`, `wid`, `readyAt`, `whitelistCount`, `outboundEnabled`, `monitorGroups`, and `ignored` (per-reason counters) / `ignoredTotal`.\n\nConnection states: `INITIALIZING`, `QR_READY`, `AUTHENTICATED`, `READY`, `DISCONNECTED`, `AUTH_FAILURE`, `ERROR`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Connection",
+      "item": [
+        {
+          "name": "QR (JSON)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/qr?format=json",
+              "host": ["{{baseUrl}}"],
+              "path": ["qr"],
+              "query": [{ "key": "format", "value": "json" }]
+            },
+            "description": "Returns `{ state, qr, dataUrl }`. `qr` is the raw QR string; `dataUrl` is a PNG data URL you can render. `null` once connected. For scanning, prefer opening `{{baseUrl}}/qr` in a browser."
+          },
+          "response": []
+        },
+        {
+          "name": "QR (HTML page)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/qr",
+              "host": ["{{baseUrl}}"],
+              "path": ["qr"]
+            },
+            "description": "Self-refreshing HTML page that renders the QR code (or a 'connected' message). Best opened in a browser: WhatsApp → Settings → Linked devices → Link a device."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Whitelist",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/whitelist",
+              "host": ["{{baseUrl}}"],
+              "path": ["whitelist"]
+            },
+            "description": "List all allowed numbers: `[{ id, phone_number, label, created_at }]`."
+          },
+          "response": []
+        },
+        {
+          "name": "Add",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const d = pm.response.json().data;",
+                  "if (d && d.phone_number) {",
+                  "  pm.collectionVariables.set('number', d.phone_number);",
+                  "  console.log('whitelisted (normalized):', d.phone_number);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"number\": \"{{number}}\",\n  \"label\": \"{{label}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/whitelist",
+              "host": ["{{baseUrl}}"],
+              "path": ["whitelist"]
+            },
+            "description": "Add (or update the label of) an allowed number.\n\nBody: `{ \"number\": \"14155550100\", \"label\": \"optional\" }`. The number is normalized to digits only (`+1 (415) 555-0100` → `14155550100`). Invalid numbers return 400. On success the `number` collection variable is set to the normalized value for reuse by the other requests."
+          },
+          "response": []
+        },
+        {
+          "name": "Remove",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 or 404', () => pm.expect([200, 404]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/whitelist/{{number}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["whitelist", "{{number}}"]
+            },
+            "description": "Remove a number from the whitelist. Returns 404 if it wasn't present."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "item": [
+        {
+          "name": "List (all)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/messages?limit=100&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["messages"],
+              "query": [
+                { "key": "limit", "value": "100", "description": "1–500, default 100" },
+                { "key": "offset", "value": "0", "description": "default 0" }
+              ]
+            },
+            "description": "Recent captured messages (whitelisted, inbound only), newest first. Each: `{ id, message_id, chat_id, sender_number, sender_name, body, message_type, direction, timestamp, created_at }`."
+          },
+          "response": []
+        },
+        {
+          "name": "List by number",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/messages/{{number}}?limit=100&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["messages", "{{number}}"],
+              "query": [
+                { "key": "limit", "value": "100", "disabled": true },
+                { "key": "offset", "value": "0", "disabled": true }
+              ]
+            },
+            "description": "Captured messages from a single number (uses the `number` collection variable)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Outbound (disabled by default)",
+      "item": [
+        {
+          "name": "Send",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Expected 403 unless ENABLE_OUTBOUND=true on the server.",
+                  "pm.test('403 when disabled / 201 when enabled', () => pm.expect([201, 403, 503]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"number\": \"{{number}}\",\n  \"message\": \"Hello from WhatsApp Manager\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/outbound/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["outbound", "send"]
+            },
+            "description": "⚠️ Disabled by default → returns **403** unless `ENABLE_OUTBOUND=true`. Even when enabled it is rate-limited, single-recipient, and the recipient must be whitelisted. Returns 503 if the WhatsApp client isn't `READY`."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
