@@ -1,0 +1,167 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   Design tokens — WhatsApp Manager
+   Dark is the default theme; light is applied via [data-theme="light"].
+   All component colors reference these variables through the Tailwind config
+   (bg, surface, line, fg, primary, success/warning/danger/info, …).
+   ========================================================================== */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --wm-bg: #0d1310;
+  --wm-nav: #0f1512;
+  --wm-surface: #151b18;
+  --wm-surface-2: #1c231f;
+  --wm-line: #232b26;
+  --wm-line-strong: #2a332d;
+
+  --wm-fg: #ecf2ee;
+  --wm-fg-secondary: #a9b6ae;
+  --wm-fg-muted: #6b776f;
+
+  --wm-primary: #25d366;
+  --wm-primary-fg: #06170f;
+  --wm-primary-soft: rgba(37, 211, 102, 0.14);
+  --wm-primary-strong: #1fb357;
+  --wm-primary-hover: #2ee375;
+  --wm-accent: #128c7e;
+
+  --wm-code-bg: #1c231f;
+  --wm-code-fg: #b8e6c7;
+
+  --wm-success: #25d366;
+  --wm-success-soft: #12341f;
+  --wm-success-fg: #4ce28c;
+  --wm-success-line: #1e5236;
+
+  --wm-warning: #f5a623;
+  --wm-warning-soft: #3a2a0e;
+  --wm-warning-fg: #f5a623;
+  --wm-warning-line: #5a3f14;
+
+  --wm-danger: #f2555a;
+  --wm-danger-soft: #3a1a1b;
+  --wm-danger-fg: #f2555a;
+  --wm-danger-line: #5a2426;
+
+  --wm-info: #4fa3d1;
+  --wm-info-soft: #122a38;
+  --wm-info-fg: #63b7e6;
+  --wm-info-line: #1d425a;
+
+  --wm-neutral-soft: #232b26;
+  --wm-neutral-fg: #a9b6ae;
+  --wm-neutral-line: #2a332d;
+
+  --wm-skeleton-base: #1c231f;
+  --wm-skeleton-sheen: #28322c;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --wm-bg: #f6f8f7;
+  --wm-nav: #ffffff;
+  --wm-surface: #ffffff;
+  --wm-surface-2: #eff3f1;
+  --wm-line: #e3e8e6;
+  --wm-line-strong: #dee4e0;
+
+  --wm-fg: #10201a;
+  --wm-fg-secondary: #4b5a53;
+  --wm-fg-muted: #7c8b84;
+
+  --wm-primary: #1faf5a;
+  --wm-primary-fg: #ffffff;
+  --wm-primary-soft: rgba(31, 175, 90, 0.12);
+  --wm-primary-strong: #17974c;
+  --wm-primary-hover: #18994c;
+  --wm-accent: #128c7e;
+
+  --wm-code-bg: #eff3f1;
+  --wm-code-fg: #106b3b;
+
+  --wm-success: #1faf5a;
+  --wm-success-soft: #e4f6ea;
+  --wm-success-fg: #188a45;
+  --wm-success-line: #bee6cc;
+
+  --wm-warning: #d98a00;
+  --wm-warning-soft: #fcf0da;
+  --wm-warning-fg: #93590a;
+  --wm-warning-line: #f0d6a6;
+
+  --wm-danger: #d6393f;
+  --wm-danger-soft: #fbe9e9;
+  --wm-danger-fg: #b7302f;
+  --wm-danger-line: #f3c6c6;
+
+  --wm-info: #2e7fb0;
+  --wm-info-soft: #e4f1f8;
+  --wm-info-fg: #1f6b92;
+  --wm-info-line: #c4e1ef;
+
+  --wm-neutral-soft: #eff3f1;
+  --wm-neutral-fg: #4b5a53;
+  --wm-neutral-line: #dee4e0;
+
+  --wm-skeleton-base: #e6ebe8;
+  --wm-skeleton-sheen: #f2f5f3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--wm-bg);
+  color: var(--wm-fg);
+  font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(37, 211, 102, 0.33);
+}
+
+/* Themed, unobtrusive scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--wm-line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--wm-line-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--wm-fg-muted);
+  background-clip: content-box;
+}
+
+/* Focus ring shared by interactive primitives */
+.wm-focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--wm-bg), 0 0 0 4px var(--wm-primary);
+}
