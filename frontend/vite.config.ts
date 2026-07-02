@@ -6,7 +6,16 @@ import { fileURLToPath, URL } from 'node:url';
 // /messages, /outbound, /health. In dev we proxy those prefixes to it so the
 // browser talks to the Vite origin and there are no CORS concerns.
 const API_TARGET = process.env.VITE_API_TARGET || 'http://localhost:3000';
-const API_PREFIXES = ['/status', '/qr', '/whitelist', '/messages', '/outbound', '/health'];
+const API_PREFIXES = [
+  '/status',
+  '/qr',
+  '/whitelist',
+  '/messages',
+  '/outbound',
+  '/health',
+  '/credentials',
+  '/backfill',
+];
 
 export default defineConfig({
   plugins: [react()],

@@ -14,7 +14,18 @@ is **off by default**.
 - 🔐 **QR login** — shown in the terminal *and* at `http://localhost:3000/qr`.
 - 💾 **Session persistence** — scan once; the session is reused across restarts.
 - ✅ **Whitelist** — only messages from allowed numbers are stored. Managed via REST.
-- 📥 **Inbound-only capture** — id, sender, name, body, timestamp, chat id, type, direction.
+- 📥 **Full two-sided capture** — inbound *and* your own outbound messages to whitelisted
+  contacts, keyed by contact for a complete thread. Non-whitelisted traffic is only counted.
+- 🕓 **History backfill** — pull past conversation history per contact (with an optional
+  date range) via `POST /backfill`, bounded by what WhatsApp synced to this device.
+- 📎 **Media archival** — images / voice notes / audio / video / documents are downloaded
+  to local disk (`MEDIA_STORAGE_PATH`) and served back via `GET /messages/:id/media`.
+- 🎙️ **Transcription** — whitelisted voice notes/audio are auto-transcribed to their
+  original language via OpenAI (background worker; enable with `ENABLE_TRANSCRIPTION`).
+- 🌐 **On-demand translation** — `POST /messages/:id/translate` renders body + transcript
+  into English (via DeepSeek) and stores it alongside the original.
+- 🔑 **Encrypted credentials** — provider API keys are stored AES-256-GCM encrypted in
+  Postgres (master key `CREDENTIALS_ENCRYPTION_KEY`), managed over `/credentials`.
 - 🧮 **Ignored = counters only** — non-whitelisted traffic is counted, never stored with content.
 - 🚦 **Safety first** — `ENABLE_OUTBOUND=false`, rate-limited outbound scaffold, no bulk sending.
 - 🔌 **`MessageRouter` seam** — swap storage for webhook / CRM / AI orchestrator without touching ingestion.
@@ -120,7 +131,15 @@ they only bump the `ignored` counters visible in `/status`.
 | `POST /whitelist`          | Add `{ "number": "...", "label": "..." }`.             |
 | `DELETE /whitelist/:number`| Remove a number.                                       |
 | `GET /messages`            | Recent captured messages (`?limit=&offset=`).          |
-| `GET /messages/:number`    | Captured messages from one number.                     |
+| `GET /messages/:number`    | Full thread for one contact (inbound + outbound).      |
+| `POST /messages/:id/translate` | Translate body + transcript to English (DeepSeek). |
+| `GET /messages/:id/media`  | Stream the message's downloaded attachment.            |
+| `POST /backfill`           | Backfill history for all whitelisted contacts. Body: optional `{ from, to }`. |
+| `POST /backfill/:number`   | Backfill history for one contact (optional `{ from, to }`). |
+| `GET /backfill/status`     | Progress of the running/last backfill.                 |
+| `GET /credentials`         | List stored API keys (masked — name + last4 only).     |
+| `PUT /credentials/:name`   | Store/replace an encrypted key: `{ "value": "sk-…" }`. |
+| `DELETE /credentials/:name`| Remove a stored key.                                   |
 | `POST /outbound/send`      | **Disabled by default.** Guarded, rate-limited scaffold. |
 
 ### Optional API key
@@ -139,6 +158,35 @@ See [`.env.example`](./.env.example). Key flags:
 | `SESSION_DATA_PATH` | `./.wwebjs_auth`   | Where the WhatsApp session is persisted.         |
 | `API_KEY`           | *(empty)*          | If set, protects the REST API.                   |
 | `OUTBOUND_RATE_LIMIT_MAX` | `10`         | Max outbound calls per window (future use).      |
+| `CREDENTIALS_ENCRYPTION_KEY` | *(empty)* | Master key for the encrypted credentials store (`openssl rand -base64 32`). |
+| `ENABLE_TRANSCRIPTION` | `false`         | Auto-transcribe whitelisted audio via OpenAI.    |
+| `TRANSCRIPTION_MODEL` | `gpt-4o-transcribe` | OpenAI transcription model.                   |
+| `TRANSLATION_MODEL` | `deepseek-chat`    | Exact DeepSeek model id used for translation.    |
+| `MEDIA_STORAGE_PATH` | `./media`         | Where downloaded attachments are stored.         |
+| `BACKFILL_LIMIT_PER_CHAT` | `1000`       | Per-chat history cap (`0` = all available).      |
+
+### Enrichment & credentials
+
+Media download and full-thread capture work out of the box. Transcription and
+translation need provider keys — store them **encrypted** rather than in `.env`:
+
+```bash
+# 1. Set a master key once (in .env), then restart:
+#    CREDENTIALS_ENCRYPTION_KEY=$(openssl rand -base64 32)
+
+# 2. Store provider keys (encrypted at rest; only last4 is ever returned):
+curl -X PUT http://localhost:3000/credentials/openai   -H 'Content-Type: application/json' -d '{"value":"sk-..."}'
+curl -X PUT http://localhost:3000/credentials/deepseek -H 'Content-Type: application/json' -d '{"value":"sk-..."}'
+
+# 3. Turn on auto-transcription (in .env): ENABLE_TRANSCRIPTION=true
+# 4. Pull history for a contact, then translate a message on demand:
+curl -X POST http://localhost:3000/backfill/14155550100 -H 'Content-Type: application/json' -d '{"from":"2025-01-01"}'
+curl -X POST http://localhost:3000/messages/42/translate
+```
+
+> **History depth is limited by WhatsApp.** A linked device only receives a
+> bounded window of history, so backfill reaches "as much as WhatsApp synced,"
+> not the entire lifetime of a chat. `GET /backfill/status` reports what it found.
 
 ## Project structure
 

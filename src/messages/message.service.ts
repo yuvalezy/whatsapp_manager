@@ -1,24 +1,43 @@
 import { query } from '../db';
 import { normalizeNumber } from '../utils/phone';
-import { RoutableMessage, StoredMessage } from './message.model';
+import { isAudioType } from '../media/media.service';
+import {
+  PendingTranscription,
+  RoutableMessage,
+  StoredMessage,
+  TranscriptionStatus,
+  TranslationStatus,
+} from './message.model';
 
 const SELECT_COLS = `
-  id, message_id, chat_id, sender_number, sender_name,
-  body, message_type, direction, timestamp, created_at
+  id, message_id, chat_id, contact_number, sender_number, sender_name,
+  body, message_type, direction, timestamp, created_at,
+  detected_language,
+  media_type, media_path, media_mimetype, media_filesize, media_status,
+  transcript, transcript_language, transcript_translated, transcription_status,
+  translated_body, translation_status
 `;
 
 class MessageService {
   /** Persist a message (idempotent on message_id). Returns true if newly inserted. */
   async save(msg: RoutableMessage): Promise<boolean> {
+    const media = msg.media;
+    // Queue audio for transcription only once its file is actually on disk.
+    const transcriptionStatus: TranscriptionStatus =
+      media && media.status === 'downloaded' && isAudioType(media.mediaType) ? 'pending' : 'none';
+
     const { rowCount } = await query(
       `INSERT INTO messages
-         (message_id, chat_id, sender_number, sender_name, body,
-          message_type, direction, timestamp, metadata)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         (message_id, chat_id, contact_number, sender_number, sender_name, body,
+          message_type, direction, timestamp, metadata, detected_language,
+          media_type, media_path, media_mimetype, media_filesize, media_status,
+          transcription_status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        ON CONFLICT (message_id) DO NOTHING`,
       [
         msg.messageId,
         msg.chatId,
+        msg.contactNumber ?? msg.senderNumber,
         msg.senderNumber,
         msg.senderName ?? null,
         msg.body,
@@ -26,6 +45,13 @@ class MessageService {
         msg.direction,
         msg.timestamp,
         msg.metadata ? JSON.stringify(msg.metadata) : null,
+        msg.detectedLanguage ?? null,
+        media?.mediaType ?? null,
+        media?.path ?? null,
+        media?.mimetype ?? null,
+        media?.filesize ?? null,
+        media?.status ?? 'none',
+        transcriptionStatus,
       ],
     );
     return (rowCount ?? 0) > 0;
@@ -41,16 +67,75 @@ class MessageService {
     return rows;
   }
 
+  /** Full thread for a contact — both inbound and outbound, keyed by contact_number. */
   async listByNumber(rawNumber: string, limit = 100, offset = 0): Promise<StoredMessage[]> {
     const number = normalizeNumber(rawNumber);
     const { rows } = await query<StoredMessage>(
       `SELECT ${SELECT_COLS} FROM messages
-        WHERE sender_number = $1
+        WHERE contact_number = $1
         ORDER BY timestamp DESC
         LIMIT $2 OFFSET $3`,
       [number, limit, offset],
     );
     return rows;
+  }
+
+  async getById(id: string | number): Promise<StoredMessage | null> {
+    const { rows } = await query<StoredMessage>(
+      `SELECT ${SELECT_COLS} FROM messages WHERE id = $1`,
+      [id],
+    );
+    return rows[0] ?? null;
+  }
+
+  /** Rows awaiting transcription (audio with a downloaded file). */
+  async listPendingTranscription(limit = 5): Promise<PendingTranscription[]> {
+    const { rows } = await query<PendingTranscription>(
+      `SELECT id, media_path, media_mimetype, media_type
+         FROM messages
+        WHERE transcription_status = 'pending' AND media_path IS NOT NULL
+        ORDER BY id ASC
+        LIMIT $1`,
+      [limit],
+    );
+    return rows;
+  }
+
+  async setTranscription(
+    id: string | number,
+    data: { transcript: string | null; language: string | null; status: TranscriptionStatus },
+  ): Promise<void> {
+    await query(
+      `UPDATE messages
+          SET transcript = $2, transcript_language = $3, transcription_status = $4
+        WHERE id = $1`,
+      [id, data.transcript, data.language, data.status],
+    );
+  }
+
+  async setTranslation(
+    id: string | number,
+    data: {
+      translatedBody: string | null;
+      transcriptTranslated: string | null;
+      detectedLanguage: string | null;
+      status: TranslationStatus;
+    },
+  ): Promise<void> {
+    await query(
+      `UPDATE messages
+          SET translated_body = $2,
+              transcript_translated = $3,
+              detected_language = COALESCE($4, detected_language),
+              translation_status = $5
+        WHERE id = $1`,
+      [id, data.translatedBody, data.transcriptTranslated, data.detectedLanguage, data.status],
+    );
+  }
+
+  /** Update only the translation status (used to mark failures without touching content). */
+  async setTranslationStatus(id: string | number, status: TranslationStatus): Promise<void> {
+    await query('UPDATE messages SET translation_status = $2 WHERE id = $1', [id, status]);
   }
 
   /** Persist an aggregated ignored-message counter delta (no content). */

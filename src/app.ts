@@ -9,6 +9,10 @@ import { whitelistRouter } from './whitelist/whitelist.routes';
 import { messagesRouter } from './messages/message.routes';
 import { whatsappRouter } from './whatsapp/whatsapp.routes';
 import { outboundRouter } from './outbound/outbound.routes';
+import { credentialsRouter } from './credentials/credentials.routes';
+import { credentialsService } from './credentials/credentials.service';
+import { backfillRouter } from './backfill/backfill.routes';
+import { runTranscriptionPass } from './enrichment/worker';
 import { whatsappService } from './whatsapp/client';
 import { ignoredStats } from './messages/ignored-stats';
 import { messageService } from './messages/message.service';
@@ -54,6 +58,14 @@ function buildApp() {
         'DELETE /whitelist/:number',
         'GET /messages',
         'GET /messages/:number',
+        'POST /messages/:id/translate',
+        'GET /messages/:id/media',
+        'POST /backfill',
+        'POST /backfill/:number',
+        'GET /backfill/status',
+        'GET /credentials',
+        'PUT /credentials/:name',
+        'DELETE /credentials/:name',
       ],
     });
   });
@@ -62,6 +74,8 @@ function buildApp() {
   app.use('/whitelist', whitelistRouter);
   app.use('/messages', messagesRouter);
   app.use('/outbound', outboundRouter);
+  app.use('/credentials', credentialsRouter);
+  app.use('/backfill', backfillRouter);
 
   // 404
   app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
@@ -89,6 +103,7 @@ async function flushIgnored(): Promise<void> {
 async function main(): Promise<void> {
   await runMigrations();
   await whitelistService.load();
+  await credentialsService.load();
 
   const app = buildApp();
   const server = app.listen(env.PORT, () => {
@@ -107,6 +122,14 @@ async function main(): Promise<void> {
   }, IGNORED_FLUSH_INTERVAL_MS);
   flushTimer.unref();
 
+  // Background transcription worker (gated by ENABLE_TRANSCRIPTION + OpenAI key).
+  const transcriptionTimer = setInterval(() => {
+    void runTranscriptionPass().catch((err) =>
+      logger.error({ err }, 'Transcription pass failed'),
+    );
+  }, env.TRANSCRIPTION_POLL_INTERVAL_MS);
+  transcriptionTimer.unref();
+
   // Graceful shutdown
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
@@ -114,6 +137,7 @@ async function main(): Promise<void> {
     shuttingDown = true;
     logger.info({ signal }, 'Shutting down…');
     clearInterval(flushTimer);
+    clearInterval(transcriptionTimer);
     await flushIgnored();
     server.close();
     try {

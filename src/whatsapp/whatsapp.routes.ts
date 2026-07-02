@@ -4,6 +4,8 @@ import { qrToDataUrl, qrHtmlPage } from './qr';
 import { whitelistService } from '../whitelist/whitelist.service';
 import { ignoredStats } from '../messages/ignored-stats';
 import { env } from '../config/env';
+import { transcriptionService } from '../enrichment/transcription.service';
+import { translationService } from '../enrichment/translation.service';
 
 export const whatsappRouter = Router();
 
@@ -26,6 +28,7 @@ whatsappRouter.get('/qr', async (req, res, next) => {
 
 // GET /status — connection + monitoring snapshot
 whatsappRouter.get('/status', (_req, res) => {
+  const hasOpenAiKey = transcriptionService.available();
   res.json({
     data: {
       ...whatsappService.status(),
@@ -34,6 +37,9 @@ whatsappRouter.get('/status', (_req, res) => {
       monitorGroups: env.MONITOR_GROUPS,
       ignored: ignoredStats.snapshot(),
       ignoredTotal: ignoredStats.total(),
+      transcriptionEnabled: env.ENABLE_TRANSCRIPTION && hasOpenAiKey,
+      hasOpenAiKey,
+      hasDeepseekKey: translationService.available(),
     },
   });
 });

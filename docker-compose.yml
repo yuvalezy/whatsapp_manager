@@ -35,12 +35,23 @@ services:
       PGDATABASE: whatsapp_manager
       ENABLE_OUTBOUND: "false"
       # API_KEY: "change-me" # uncomment to require x-api-key on the REST API
+      # ── Enrichment (optional) ──────────────────────────────
+      MEDIA_STORAGE_PATH: /app/media
+      ENABLE_TRANSCRIPTION: "false"
+      # Master key for the encrypted credentials store (openssl rand -base64 32).
+      # Set this, then add provider keys via PUT /credentials/{openai,deepseek}.
+      # CREDENTIALS_ENCRYPTION_KEY: "<base64-32-bytes>"
+      # Fallback plaintext keys (used only if the encrypted store is disabled):
+      # OPENAI_API_KEY: ""
+      # DEEPSEEK_API_KEY: ""
     ports:
       - "3000:3000"
     volumes:
       - wa_session:/app/.wwebjs_auth # persist WhatsApp login across restarts
+      - wa_media:/app/media          # persist downloaded attachments
     restart: unless-stopped
 
 volumes:
   wa_pgdata:
   wa_session:
+  wa_media:

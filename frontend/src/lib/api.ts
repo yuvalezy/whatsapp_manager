@@ -8,6 +8,9 @@
 // ============================================================================
 
 import type {
+  BackfillStatus,
+  CredentialSummary,
+  CredentialsList,
   HealthData,
   QrData,
   StatusData,
@@ -98,4 +101,42 @@ export const api = {
       `/messages/${encodeURIComponent(number)}${qs ? `?${qs}` : ''}`,
     );
   },
+
+  // On-demand translation (body + transcript → English) via the backend/DeepSeek.
+  translateMessage: (id: string | number) =>
+    request<StoredMessage>(`/messages/${encodeURIComponent(String(id))}/translate`, {
+      method: 'POST',
+    }),
+
+  // Absolute URL for a message's downloaded attachment. Usable as an <img>/<audio>
+  // src — carries the API key as a query param since element requests can't set headers.
+  mediaUrl: (id: string | number) => {
+    const path = `${BASE}/messages/${encodeURIComponent(String(id))}/media`;
+    return API_KEY ? `${path}?api_key=${encodeURIComponent(API_KEY)}` : path;
+  },
+
+  // History backfill (async on the server; poll backfillStatus for progress).
+  runBackfill: (window?: { from?: string; to?: string }) =>
+    request<BackfillStatus>('/backfill', {
+      method: 'POST',
+      body: JSON.stringify(window ?? {}),
+    }),
+  runBackfillNumber: (number: string, window?: { from?: string; to?: string }) =>
+    request<BackfillStatus>(`/backfill/${encodeURIComponent(number)}`, {
+      method: 'POST',
+      body: JSON.stringify(window ?? {}),
+    }),
+  backfillStatus: () => request<BackfillStatus>('/backfill/status'),
+
+  // Encrypted credentials store (values are never returned — only last4).
+  listCredentials: () => request<CredentialsList>('/credentials'),
+  setCredential: (name: string, value: string) =>
+    request<CredentialSummary>(`/credentials/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    }),
+  deleteCredential: (name: string) =>
+    request<{ removed: boolean }>(`/credentials/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
 };

@@ -36,6 +36,9 @@ export interface StatusData {
   monitorGroups: boolean;
   ignored: Record<IgnoredReason, number>;
   ignoredTotal: number;
+  transcriptionEnabled?: boolean;
+  hasOpenAiKey?: boolean;
+  hasDeepseekKey?: boolean;
 }
 
 export interface HealthData {
@@ -57,10 +60,15 @@ export interface WhitelistEntry {
   created_at: string;
 }
 
+export type MediaStatus = 'none' | 'pending' | 'downloaded' | 'failed' | 'expired';
+export type TranscriptionStatus = 'none' | 'pending' | 'done' | 'failed';
+export type TranslationStatus = 'none' | 'pending' | 'done' | 'failed' | 'skipped';
+
 export interface StoredMessage {
   id: string | number;
   message_id: string;
   chat_id: string;
+  contact_number?: string | null;
   sender_number: string;
   sender_name: string | null;
   body: string | null;
@@ -69,4 +77,40 @@ export interface StoredMessage {
   timestamp: string;
   created_at: string;
   metadata?: Record<string, unknown> | null;
+
+  detected_language?: string | null;
+
+  media_type?: string | null;
+  media_mimetype?: string | null;
+  media_filesize?: number | null;
+  media_status?: MediaStatus;
+
+  transcript?: string | null;
+  transcript_language?: string | null;
+  transcript_translated?: string | null;
+  transcription_status?: TranscriptionStatus;
+
+  translated_body?: string | null;
+  translation_status?: TranslationStatus;
+}
+
+export interface CredentialSummary {
+  name: string;
+  last4: string | null;
+  updated_at: string;
+}
+
+export interface CredentialsList {
+  enabled: boolean;
+  items: CredentialSummary[];
+}
+
+export interface BackfillStatus {
+  running: boolean;
+  processed: number;
+  saved: number;
+  startedAt: string | null;
+  finishedAt: string | null;
+  currentNumber: string | null;
+  error: string | null;
 }

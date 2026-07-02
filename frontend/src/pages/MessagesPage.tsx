@@ -26,7 +26,7 @@ export function MessagesPage() {
   const all = messages ?? [];
   const filtered = all.filter(
     (m) =>
-      (numberFilter === 'all' || normalizeNumber(m.sender_number) === normalizeNumber(numberFilter)) &&
+      (numberFilter === 'all' || normalizeNumber(m.contact_number ?? m.sender_number) === normalizeNumber(numberFilter)) &&
       (typeFilter === 'all' || m.message_type === typeFilter) &&
       (!search || (m.body ?? '').toLowerCase().includes(search.toLowerCase())),
   );

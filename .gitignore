@@ -7,6 +7,10 @@ dist/
 .wwebjs_auth/
 .wwebjs_cache/
 
+# Downloaded attachments (message media — never commit).
+# Root-anchored so it doesn't match the src/media/ source folder.
+/media/
+
 # logs
 *.log
 npm-debug.log*

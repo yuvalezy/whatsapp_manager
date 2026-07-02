@@ -17,6 +17,7 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'dashboard', label: 'Overview', icon: 'layoutGrid', path: '/' },
   { key: 'whitelist', label: 'Whitelist', icon: 'shield', path: '/whitelist' },
   { key: 'messages', label: 'Messages', icon: 'messageSquare', path: '/messages' },
+  { key: 'settings', label: 'Settings', icon: 'settings', path: '/settings' },
 ];
 
 /** Resolve the active nav key from a pathname. */

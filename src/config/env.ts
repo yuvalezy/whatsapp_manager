@@ -49,6 +49,36 @@ const envSchema = z.object({
 
   // API auth (optional)
   API_KEY: z.string().optional(),
+
+  // ── Encrypted credentials store ──────────────────────────────
+  // Master key for AES-256-GCM at-rest encryption of provider API keys.
+  // base64 32 bytes: `openssl rand -base64 32`. Unset ⇒ store disabled.
+  CREDENTIALS_ENCRYPTION_KEY: z.string().optional(),
+
+  // ── AI providers (keys live in the encrypted store; these env vars
+  //    are an optional bootstrap fallback only) ──────────────────
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_BASE_URL: z.string().default('https://api.openai.com/v1'),
+  DEEPSEEK_API_KEY: z.string().optional(),
+  DEEPSEEK_BASE_URL: z.string().default('https://api.deepseek.com'),
+
+  // Models. TRANSLATION_MODEL is the exact DeepSeek API model string.
+  TRANSCRIPTION_MODEL: z.string().default('gpt-4o-transcribe'),
+  TRANSLATION_MODEL: z.string().default('deepseek-chat'),
+  TARGET_LANGUAGE: z.string().default('en'),
+
+  // ── Media archival ───────────────────────────────────────────
+  MEDIA_STORAGE_PATH: z.string().default('./media'),
+  MEDIA_MAX_BYTES: z.coerce.number().int().nonnegative().default(0), // 0 = unlimited
+
+  // ── Transcription worker ─────────────────────────────────────
+  ENABLE_TRANSCRIPTION: boolFlag(false),
+  TRANSCRIPTION_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(15_000),
+  TRANSCRIPTION_BATCH: z.coerce.number().int().positive().default(5),
+
+  // ── History backfill ─────────────────────────────────────────
+  // Per-chat cap for fetchMessages. 0 = Infinity (all locally-available).
+  BACKFILL_LIMIT_PER_CHAT: z.coerce.number().int().nonnegative().default(1000),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -305,6 +305,24 @@ const ICONS = {
       <line x1="16" y1="3" x2="14" y2="21" />
     </>
   ),
+  key: (
+    <>
+      <circle cx="7.5" cy="15.5" r="5.5" />
+      <path d="m21 2-9.6 9.6" />
+      <path d="m15.5 7.5 3 3L22 7l-3-3" />
+    </>
+  ),
+  languages: (
+    <>
+      <path d="m5 8 6 6" />
+      <path d="m4 14 6-6 2-3" />
+      <path d="M2 5h12" />
+      <path d="M7 2h1" />
+      <path d="m22 22-5-10-5 10" />
+      <path d="M14 18h6" />
+    </>
+  ),
+  play: <polygon points="5 3 19 12 5 21 5 3" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;

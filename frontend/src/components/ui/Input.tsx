@@ -28,7 +28,7 @@ interface InputBaseProps {
 
 interface SingleLineProps extends InputBaseProps {
   multiline?: false;
-  type?: 'text' | 'tel' | 'number' | 'search' | 'password';
+  type?: 'text' | 'tel' | 'number' | 'search' | 'password' | 'date';
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 }
 

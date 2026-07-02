@@ -3,6 +3,7 @@ import { env, waWebRemotePath } from '../config/env';
 import { logger } from '../logger';
 import { registerEvents } from './events';
 import { messageRouter } from '../router/message-router';
+import { normalizeNumber } from '../utils/phone';
 
 export type ConnectionState =
   | 'INITIALIZING'
@@ -40,6 +41,11 @@ class WhatsAppService {
 
   getState(): ConnectionState {
     return this.state;
+  }
+
+  /** This account's own number (digits only), or '' if not linked yet. */
+  getOwnNumber(): string {
+    return this.info.wid ? normalizeNumber(this.info.wid) : '';
   }
 
   setState(state: ConnectionState): void {

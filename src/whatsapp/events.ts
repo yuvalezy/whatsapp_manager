@@ -4,9 +4,8 @@ import { logger } from '../logger';
 import { printQrToTerminal } from './qr';
 import { whitelistService } from '../whitelist/whitelist.service';
 import { ignoredStats } from '../messages/ignored-stats';
-import { normalizeNumber } from '../utils/phone';
-import { RoutableMessage } from '../messages/message.model';
 import { MessageRouter } from '../router/message-router';
+import { buildRoutable, contactNumberOf } from './message-mapper';
 import type { WhatsAppService } from './client';
 
 /**
@@ -52,64 +51,46 @@ export function registerEvents(
     logger.warn({ reason }, 'WhatsApp disconnected');
   });
 
-  // Incoming messages only (own outgoing messages are not emitted here).
-  client.on('message', (message: Message) => {
-    handleIncoming(message, router).catch((err) => {
-      logger.error({ err }, 'Error handling incoming message');
+  // `message_create` fires for BOTH received and our own sent messages, so we
+  // can capture the full two-sided thread (the plain `message` event suppresses
+  // our own sends). Direction is derived from `message.id.fromMe`.
+  client.on('message_create', (message: Message) => {
+    handleMessage(service, message, router).catch((err) => {
+      logger.error({ err }, 'Error handling message');
     });
   });
 }
 
 /**
- * Core policy: process ONLY 1:1 messages from whitelisted numbers.
- * Everything else is counted (never stored/logged with content) and dropped.
+ * Core policy: process ONLY 1:1 messages whose contact is whitelisted, in either
+ * direction. Everything else is counted (never stored/logged with content) and
+ * dropped. Our own outbound to non-whitelisted contacts is dropped silently.
  */
-async function handleIncoming(message: Message, router: MessageRouter): Promise<void> {
+async function handleMessage(
+  service: WhatsAppService,
+  message: Message,
+  router: MessageRouter,
+): Promise<void> {
+  const fromMe = message.id.fromMe;
   const from = message.from ?? '';
   const isGroup = from.endsWith('@g.us');
 
-  if (from === 'status@broadcast') {
-    ignoredStats.increment('status_broadcast');
+  if (from === 'status@broadcast' || message.to === 'status@broadcast') {
+    if (!fromMe) ignoredStats.increment('status_broadcast');
     return;
   }
   if (isGroup && !env.MONITOR_GROUPS) {
-    ignoredStats.increment('group');
+    if (!fromMe) ignoredStats.increment('group');
     return;
   }
 
-  const senderId = (isGroup ? message.author : from) ?? from;
-  const senderNumber = normalizeNumber(senderId);
-
-  if (!whitelistService.isWhitelisted(senderNumber)) {
-    ignoredStats.increment('not_whitelisted');
+  const contactNumber = contactNumberOf(message);
+  if (!whitelistService.isWhitelisted(contactNumber)) {
+    // Count inbound noise; drop our own outbound to non-whitelisted silently.
+    if (!fromMe) ignoredStats.increment('not_whitelisted');
     return;
   }
 
-  // Best-effort contact name; never block ingestion on it.
-  let senderName: string | undefined;
-  try {
-    const contact = await message.getContact();
-    senderName = contact.pushname || contact.name || contact.verifiedName || undefined;
-  } catch {
-    /* contact lookup is optional */
-  }
-
-  const routable: RoutableMessage = {
-    messageId: message.id._serialized,
-    chatId: from,
-    senderNumber,
-    senderName,
-    body: message.body ?? '',
-    messageType: String(message.type),
-    direction: 'inbound',
-    timestamp: new Date(message.timestamp * 1000),
-    metadata: {
-      hasMedia: message.hasMedia,
-      isForwarded: message.isForwarded,
-      deviceType: message.deviceType,
-      isGroup,
-    },
-  };
-
+  const routable = await buildRoutable(message, service.getOwnNumber());
   await router.route(routable);
 }

@@ -45,10 +45,11 @@ export function MessageList({ rows = [], loading = false, onOpenMessage, classNa
         <MessageRow
           key={msg.id}
           senderName={msg.sender_name}
-          senderNumber={msg.sender_number}
+          senderNumber={msg.contact_number ?? msg.sender_number}
           body={msg.body}
           messageType={msg.message_type}
           timestamp={msg.timestamp}
+          transcript={msg.transcript}
           onClick={() => onOpenMessage?.(msg)}
         />
       ))}

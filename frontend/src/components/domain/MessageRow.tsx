@@ -28,6 +28,8 @@ export interface MessageRowProps {
   body?: string | null;
   messageType?: MessageType;
   timestamp?: string | number | null;
+  /** For audio rows, previews the transcript when available. */
+  transcript?: string | null;
   onClick?: () => void;
   className?: string;
 }
@@ -38,11 +40,18 @@ export function MessageRow({
   body,
   messageType = 'chat',
   timestamp,
+  transcript,
   onClick,
   className,
 }: MessageRowProps) {
   const name = senderName || 'Unknown';
-  const preview = messageType === 'chat' ? body || '' : TYPE_PREVIEW[messageType] || body || '';
+  const isAudio = messageType === 'ptt' || messageType === 'audio';
+  const preview =
+    isAudio && transcript
+      ? transcript
+      : messageType === 'chat'
+        ? body || ''
+        : TYPE_PREVIEW[messageType] || body || '';
 
   return (
     <button
