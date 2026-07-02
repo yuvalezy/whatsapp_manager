@@ -4,6 +4,7 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { ConnectionPage } from '@/pages/ConnectionPage';
 import { WhitelistPage } from '@/pages/WhitelistPage';
 import { MessagesPage } from '@/pages/MessagesPage';
+import { ConversationsPage } from '@/pages/ConversationsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { GalleryPage } from '@/pages/GalleryPage';
 
@@ -16,6 +17,7 @@ export function App() {
         <Route path="connection" element={<ConnectionPage />} />
         <Route path="whitelist" element={<WhitelistPage />} />
         <Route path="messages" element={<MessagesPage />} />
+        <Route path="conversations" element={<ConversationsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
 

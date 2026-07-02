@@ -105,6 +105,19 @@ export interface CredentialsList {
   items: CredentialSummary[];
 }
 
+export interface ConversationThread {
+  phone_number: string;
+  label: string | null;
+  lastMessage: StoredMessage | null;
+}
+
+export interface TranslateAllResult {
+  requested: number;
+  translated: number;
+  skipped: number;
+  failed: number;
+}
+
 export interface BackfillStatus {
   running: boolean;
   processed: number;

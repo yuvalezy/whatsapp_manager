@@ -18,6 +18,9 @@ is **off by default**.
   contacts, keyed by contact for a complete thread. Non-whitelisted traffic is only counted.
 - 🕓 **History backfill** — pull past conversation history per contact (with an optional
   date range) via `POST /backfill`, bounded by what WhatsApp synced to this device.
+- 🔄 **Auto catch-up** — on every reconnect (e.g. after your PC was off), each whitelisted
+  contact is automatically backfilled from its own last captured message, closing any gap
+  with no manual step.
 - 📎 **Media archival** — images / voice notes / audio / video / documents are downloaded
   to local disk (`MEDIA_STORAGE_PATH`) and served back via `GET /messages/:id/media`.
 - 🎙️ **Transcription** — whitelisted voice notes/audio are auto-transcribed to their

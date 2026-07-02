@@ -88,6 +88,46 @@ class MessageService {
     return rows[0] ?? null;
   }
 
+  /** Epoch ms of the most recent stored message for a contact, or null if none captured yet. */
+  async getLastMessageTimestamp(rawNumber: string): Promise<number | null> {
+    const number = normalizeNumber(rawNumber);
+    const { rows } = await query<{ max: Date | null }>(
+      `SELECT MAX(timestamp) AS max FROM messages WHERE contact_number = $1`,
+      [number],
+    );
+    const max = rows[0]?.max;
+    return max ? new Date(max).getTime() : null;
+  }
+
+  /** One row per contact — each contact's most recent message, for a conversation list. */
+  async listThreads(): Promise<StoredMessage[]> {
+    const { rows } = await query<StoredMessage>(
+      `SELECT ${SELECT_COLS} FROM (
+         SELECT DISTINCT ON (contact_number) *
+         FROM messages
+         WHERE contact_number IS NOT NULL
+         ORDER BY contact_number, timestamp DESC
+       ) t
+       ORDER BY timestamp DESC`,
+    );
+    return rows;
+  }
+
+  /** A contact's messages that still have content to translate and aren't done yet. */
+  async listUntranslated(rawNumber: string): Promise<StoredMessage[]> {
+    const number = normalizeNumber(rawNumber);
+    const { rows } = await query<StoredMessage>(
+      `SELECT ${SELECT_COLS} FROM messages
+        WHERE contact_number = $1
+          AND translation_status != 'done'
+          AND (NULLIF(TRIM(COALESCE(body, '')), '') IS NOT NULL
+               OR NULLIF(TRIM(COALESCE(transcript, '')), '') IS NOT NULL)
+        ORDER BY timestamp ASC`,
+      [number],
+    );
+    return rows;
+  }
+
   /** Rows awaiting transcription (audio with a downloaded file). */
   async listPendingTranscription(limit = 5): Promise<PendingTranscription[]> {
     const { rows } = await query<PendingTranscription>(

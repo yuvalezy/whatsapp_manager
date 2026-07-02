@@ -112,6 +112,50 @@ class BackfillService {
     }
   }
 
+  /**
+   * Auto-run on every WhatsApp reconnect: for each whitelisted contact, backfill
+   * from that contact's own last-known message timestamp (no separate "last run"
+   * state needed — it's derived from the messages already stored). Closes any gap
+   * left by downtime. Contacts with no captured messages yet are skipped — that's
+   * an initial backfill, left to a manual trigger. No-ops if a backfill (manual or
+   * auto) is already running.
+   */
+  async catchUpAll(): Promise<void> {
+    if (this.status.running) {
+      logger.info('Skipping auto catch-up backfill — a backfill is already running');
+      return;
+    }
+    this.status = {
+      running: true,
+      processed: 0,
+      saved: 0,
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      currentNumber: null,
+      error: null,
+    };
+
+    try {
+      const numbers = (await whitelistService.list()).map((e) => e.phone_number);
+      for (const number of numbers) {
+        const since = await messageService.getLastMessageTimestamp(number);
+        if (since === null) continue;
+        try {
+          await this.backfillNumber(number, { since });
+        } catch (err) {
+          logger.error({ err, number }, 'Auto catch-up failed for number');
+        }
+      }
+    } catch (err) {
+      this.status.error = err instanceof Error ? err.message : String(err);
+      logger.error({ err }, 'Auto catch-up run failed');
+    } finally {
+      this.status.running = false;
+      this.status.finishedAt = new Date().toISOString();
+      this.status.currentNumber = null;
+    }
+  }
+
   /** Kick off a backfill in the background. Returns immediately (one run at a time). */
   start(target: { number?: string; since?: number; until?: number }): void {
     if (this.status.running) return;

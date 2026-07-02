@@ -111,6 +111,13 @@ Key structural conventions:
 - **Backfill** (`backfill/`): manual-trigger, one run at a time, tracked via in-memory
   status. `fetchMessages` has no native date filter — the date window is applied
   client-side on `message.timestamp`. History depth is WhatsApp-limited.
+- **Auto catch-up on reconnect:** `catchUpAll()` runs on every `client.on('ready')`
+  (`events.ts`) — no separate "last run" state is stored; it derives each contact's
+  `since` from `MAX(timestamp)` already in `messages` (`messageService.getLastMessageTimestamp`).
+  Closes gaps from downtime (PC off, connection drop) automatically. Contacts with zero
+  captured messages are skipped (that's an initial backfill — manual only). Shares the
+  same in-memory status/one-run-at-a-time guard as manual backfill, so it no-ops instead
+  of racing a manual trigger.
 - SQL for the new `messages` columns still lives only in `message.service.ts`; the
   `credentials` table SQL lives only in `credentials.service.ts`. Keep that boundary.
 

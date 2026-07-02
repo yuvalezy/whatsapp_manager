@@ -9,12 +9,14 @@
 
 import type {
   BackfillStatus,
+  ConversationThread,
   CredentialSummary,
   CredentialsList,
   HealthData,
   QrData,
   StatusData,
   StoredMessage,
+  TranslateAllResult,
   WhitelistEntry,
 } from '@/types';
 
@@ -105,6 +107,15 @@ export const api = {
   // On-demand translation (body + transcript → English) via the backend/DeepSeek.
   translateMessage: (id: string | number) =>
     request<StoredMessage>(`/messages/${encodeURIComponent(String(id))}/translate`, {
+      method: 'POST',
+    }),
+
+  // One row per whitelisted contact — their latest message, sorted by recency.
+  listThreads: () => request<ConversationThread[]>('/messages/threads'),
+
+  // Translate every not-yet-translated message in a contact's thread.
+  translateAll: (number: string) =>
+    request<TranslateAllResult>(`/messages/${encodeURIComponent(number)}/translate-all`, {
       method: 'POST',
     }),
 

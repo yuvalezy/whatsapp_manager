@@ -6,6 +6,7 @@ import { whitelistService } from '../whitelist/whitelist.service';
 import { ignoredStats } from '../messages/ignored-stats';
 import { MessageRouter } from '../router/message-router';
 import { buildRoutable, contactNumberOf } from './message-mapper';
+import { backfillService } from '../backfill/backfill.service';
 import type { WhatsAppService } from './client';
 
 /**
@@ -44,6 +45,12 @@ export function registerEvents(
       wid: info?.wid?._serialized,
     });
     logger.info({ pushname: info?.pushname }, 'WhatsApp client is READY');
+
+    // Close any gap left by downtime — backfills each whitelisted contact from
+    // its own last-known message timestamp. No-ops for contacts never backfilled.
+    backfillService.catchUpAll().catch((err) => {
+      logger.error({ err }, 'Auto catch-up backfill failed');
+    });
   });
 
   client.on('disconnected', (reason) => {
