@@ -4,6 +4,9 @@ import { resolveDeepseekKey } from '../credentials/credentials.service';
 export interface TranslationResult {
   detectedLanguage: string;
   translation: string;
+  /** Token usage, when reported by the provider (used for cost tracking). */
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 /**
@@ -51,7 +54,10 @@ class TranslationService {
       throw new Error(`DeepSeek translation failed (${res.status}): ${detail.slice(0, 300)}`);
     }
 
-    const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const json = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
     const content = json.choices?.[0]?.message?.content ?? '{}';
     let parsed: { detected_language?: string; translation?: string };
     try {
@@ -62,6 +68,8 @@ class TranslationService {
     return {
       detectedLanguage: parsed.detected_language ?? 'und',
       translation: parsed.translation ?? '',
+      inputTokens: json.usage?.prompt_tokens,
+      outputTokens: json.usage?.completion_tokens,
     };
   }
 }

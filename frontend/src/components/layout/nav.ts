@@ -18,6 +18,7 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'whitelist', label: 'Whitelist', icon: 'shield', path: '/whitelist' },
   { key: 'messages', label: 'Messages', icon: 'messageSquare', path: '/messages' },
   { key: 'conversations', label: 'Conversations', icon: 'inbox', path: '/conversations' },
+  { key: 'costs', label: 'Costs', icon: 'dollarSign', path: '/costs' },
   { key: 'settings', label: 'Settings', icon: 'settings', path: '/settings' },
 ];
 

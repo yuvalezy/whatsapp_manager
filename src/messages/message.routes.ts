@@ -5,6 +5,7 @@ import { StoredMessage } from './message.model';
 import { translationService } from '../enrichment/translation.service';
 import { absoluteMediaPath } from '../media/media.service';
 import { whitelistService } from '../whitelist/whitelist.service';
+import { costService } from '../costs/cost.service';
 import { logger } from '../logger';
 
 export const messagesRouter = Router();
@@ -68,11 +69,21 @@ async function translateMessageRow(msg: StoredMessage): Promise<'translated' | '
     const r = await translationService.translate(msg.body as string);
     translatedBody = r.translation;
     detected = r.detectedLanguage;
+    if (r.inputTokens != null && r.outputTokens != null) {
+      await costService
+        .recordTranslation({ messageId: msg.id, inputTokens: r.inputTokens, outputTokens: r.outputTokens })
+        .catch((err) => logger.error({ err, id: msg.id }, 'Failed to record translation cost'));
+    }
   }
   if (hasTranscript) {
     const r = await translationService.translate(msg.transcript as string);
     transcriptTranslated = r.translation;
     if (!detected) detected = r.detectedLanguage;
+    if (r.inputTokens != null && r.outputTokens != null) {
+      await costService
+        .recordTranslation({ messageId: msg.id, inputTokens: r.inputTokens, outputTokens: r.outputTokens })
+        .catch((err) => logger.error({ err, id: msg.id }, 'Failed to record translation cost'));
+    }
   }
 
   await messageService.setTranslation(msg.id, {

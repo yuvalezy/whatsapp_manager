@@ -6,9 +6,20 @@ import { resolveOpenAiKey } from '../credentials/credentials.service';
 export interface TranscriptionResult {
   text: string;
   language?: string;
+  /** Estimated audio duration in seconds (see estimateDurationSeconds) — used for cost tracking. */
+  durationSeconds?: number;
 }
 
 const AUDIO_MIME_FALLBACK = 'audio/ogg';
+
+// `verbose_json` (which reports exact duration) is rejected by gpt-4o-transcribe —
+// it only accepts 'json'/'text'. WhatsApp voice notes are consistently encoded as
+// mono OGG/Opus at ~16kbps, so we approximate duration from file size instead.
+const ESTIMATED_BYTES_PER_SECOND = 2000;
+
+function estimateDurationSeconds(byteLength: number): number {
+  return byteLength / ESTIMATED_BYTES_PER_SECOND;
+}
 
 /**
  * Transcribe an audio file with OpenAI (Whisper / gpt-4o-transcribe). Uses the
@@ -43,7 +54,11 @@ class TranscriptionService {
       throw new Error(`OpenAI transcription failed (${res.status}): ${detail.slice(0, 300)}`);
     }
     const json = (await res.json()) as { text?: string; language?: string };
-    return { text: json.text ?? '', language: json.language };
+    return {
+      text: json.text ?? '',
+      language: json.language,
+      durationSeconds: estimateDurationSeconds(buffer.length),
+    };
   }
 }
 

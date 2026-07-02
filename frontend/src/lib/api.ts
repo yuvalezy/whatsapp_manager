@@ -10,8 +10,11 @@
 import type {
   BackfillStatus,
   ConversationThread,
+  CostEntry,
+  CostSummary,
   CredentialSummary,
   CredentialsList,
+  DailyCost,
   HealthData,
   QrData,
   StatusData,
@@ -150,4 +153,9 @@ export const api = {
     request<{ removed: boolean }>(`/credentials/${encodeURIComponent(name)}`, {
       method: 'DELETE',
     }),
+
+  // API cost tracking (OpenAI transcription, DeepSeek translation).
+  costSummary: () => request<CostSummary>('/costs/summary'),
+  costDaily: (days = 30) => request<DailyCost[]>(`/costs/daily?days=${days}`),
+  listCosts: (limit = 100) => request<CostEntry[]>(`/costs?limit=${limit}`),
 };

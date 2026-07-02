@@ -29,6 +29,11 @@ is **off by default**.
   into English (via DeepSeek) and stores it alongside the original.
 - 🔑 **Encrypted credentials** — provider API keys are stored AES-256-GCM encrypted in
   Postgres (master key `CREDENTIALS_ENCRYPTION_KEY`), managed over `/credentials`.
+- 💬 **Conversations view** — WhatsApp-style chat bubbles per whitelisted contact, sorted
+  by last message, with a "Translate all" action per thread.
+- 💵 **Cost tracking** — per-call OpenAI/DeepSeek spend on the Costs page + a dashboard
+  KPI (`GET /costs/summary`). Rates are configurable estimates — verify against current
+  provider pricing.
 - 🧮 **Ignored = counters only** — non-whitelisted traffic is counted, never stored with content.
 - 🚦 **Safety first** — `ENABLE_OUTBOUND=false`, rate-limited outbound scaffold, no bulk sending.
 - 🔌 **`MessageRouter` seam** — swap storage for webhook / CRM / AI orchestrator without touching ingestion.
@@ -134,8 +139,10 @@ they only bump the `ignored` counters visible in `/status`.
 | `POST /whitelist`          | Add `{ "number": "...", "label": "..." }`.             |
 | `DELETE /whitelist/:number`| Remove a number.                                       |
 | `GET /messages`            | Recent captured messages (`?limit=&offset=`).          |
+| `GET /messages/threads`    | One row per whitelisted contact + their latest message, sorted by recency. |
 | `GET /messages/:number`    | Full thread for one contact (inbound + outbound).      |
 | `POST /messages/:id/translate` | Translate body + transcript to English (DeepSeek). |
+| `POST /messages/:number/translate-all` | Translate every not-yet-translated message in a contact's thread. |
 | `GET /messages/:id/media`  | Stream the message's downloaded attachment.            |
 | `POST /backfill`           | Backfill history for all whitelisted contacts. Body: optional `{ from, to }`. |
 | `POST /backfill/:number`   | Backfill history for one contact (optional `{ from, to }`). |
@@ -143,6 +150,9 @@ they only bump the `ignored` counters visible in `/status`.
 | `GET /credentials`         | List stored API keys (masked — name + last4 only).     |
 | `PUT /credentials/:name`   | Store/replace an encrypted key: `{ "value": "sk-…" }`. |
 | `DELETE /credentials/:name`| Remove a stored key.                                   |
+| `GET /costs/summary`       | Monthly + all-time cost totals per provider.           |
+| `GET /costs/daily`         | Per-day, per-provider cost totals (`?days=30`).        |
+| `GET /costs`               | Recent individual cost entries (`?limit=100`).         |
 | `POST /outbound/send`      | **Disabled by default.** Guarded, rate-limited scaffold. |
 
 ### Optional API key

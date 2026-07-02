@@ -11,6 +11,8 @@ import { MessageList } from '@/components/domain/MessageList';
 import { MessageDetail } from '@/components/domain/MessageDetail';
 import { useStatus } from '@/hooks/useStatus';
 import { useMessages } from '@/hooks/useMessages';
+import { useCostSummary } from '@/hooks/useCosts';
+import { formatUsd } from '@/lib/format';
 import type { ConnectionState, StoredMessage } from '@/types';
 
 const CONNECTION_LABELS: Record<ConnectionState, string> = {
@@ -26,6 +28,7 @@ const CONNECTION_LABELS: Record<ConnectionState, string> = {
 export function DashboardPage() {
   const { data: status } = useStatus();
   const { data: messages, isLoading } = useMessages({ limit: 6 });
+  const { data: costSummary, isLoading: costLoading } = useCostSummary();
   const navigate = useNavigate();
   const [selected, setSelected] = useState<StoredMessage | null>(null);
   const [open, setOpen] = useState(false);
@@ -58,6 +61,12 @@ export function DashboardPage() {
             value={(status?.ignoredTotal ?? 0).toLocaleString()}
             icon="filter"
             loading={!status}
+          />
+          <StatCard
+            label="API cost this month"
+            value={formatUsd(costSummary?.monthlyTotal)}
+            icon="dollarSign"
+            loading={costLoading}
           />
         </div>
 

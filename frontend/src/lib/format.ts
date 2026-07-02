@@ -83,6 +83,17 @@ export function initials(name: string | null | undefined): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+/** USD amount, e.g. `$3.42`. Use `precise` for small per-call amounts (6dp, matching the DB's NUMERIC(10,6)). */
+export function formatUsd(amount: number | null | undefined, precise = false): string {
+  const value = amount ?? 0;
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: precise ? 6 : 2,
+    maximumFractionDigits: precise ? 6 : 2,
+  }).format(value);
+}
+
 /** Deterministic hue (0–359) derived from a string — used for avatar tints. */
 export function hueFromString(str: string): number {
   let hash = 0;

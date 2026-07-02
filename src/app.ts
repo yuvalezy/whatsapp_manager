@@ -12,6 +12,7 @@ import { outboundRouter } from './outbound/outbound.routes';
 import { credentialsRouter } from './credentials/credentials.routes';
 import { credentialsService } from './credentials/credentials.service';
 import { backfillRouter } from './backfill/backfill.routes';
+import { costsRouter } from './costs/cost.routes';
 import { runTranscriptionPass } from './enrichment/worker';
 import { whatsappService } from './whatsapp/client';
 import { ignoredStats } from './messages/ignored-stats';
@@ -57,8 +58,10 @@ function buildApp() {
         'POST /whitelist',
         'DELETE /whitelist/:number',
         'GET /messages',
+        'GET /messages/threads',
         'GET /messages/:number',
         'POST /messages/:id/translate',
+        'POST /messages/:number/translate-all',
         'GET /messages/:id/media',
         'POST /backfill',
         'POST /backfill/:number',
@@ -66,6 +69,9 @@ function buildApp() {
         'GET /credentials',
         'PUT /credentials/:name',
         'DELETE /credentials/:name',
+        'GET /costs',
+        'GET /costs/summary',
+        'GET /costs/daily',
       ],
     });
   });
@@ -76,6 +82,7 @@ function buildApp() {
   app.use('/outbound', outboundRouter);
   app.use('/credentials', credentialsRouter);
   app.use('/backfill', backfillRouter);
+  app.use('/costs', costsRouter);
 
   // 404
   app.use((_req, res) => res.status(404).json({ error: 'Not found' }));

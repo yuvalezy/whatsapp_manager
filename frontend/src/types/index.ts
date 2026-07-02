@@ -118,6 +118,42 @@ export interface TranslateAllResult {
   failed: number;
 }
 
+export type CostProvider = 'openai' | 'deepseek';
+export type CostOperation = 'transcription' | 'translation';
+
+export interface CostEntry {
+  [key: string]: unknown;
+  id: string;
+  provider: CostProvider;
+  operation: CostOperation;
+  message_id: string | null;
+  audio_seconds: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: number;
+  created_at: string;
+}
+
+export interface ProviderCostSummary {
+  provider: CostProvider;
+  calls: number;
+  cost_usd: number;
+}
+
+export interface CostSummary {
+  month: string;
+  monthlyTotal: number;
+  monthlyByProvider: ProviderCostSummary[];
+  allTimeTotal: number;
+  allTimeByProvider: ProviderCostSummary[];
+}
+
+export interface DailyCost {
+  day: string;
+  provider: CostProvider;
+  cost_usd: number;
+}
+
 export interface BackfillStatus {
   running: boolean;
   processed: number;

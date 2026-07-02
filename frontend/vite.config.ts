@@ -15,6 +15,7 @@ const API_PREFIXES = [
   '/health',
   '/credentials',
   '/backfill',
+  '/costs',
 ];
 
 export default defineConfig({

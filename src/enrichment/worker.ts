@@ -3,6 +3,7 @@ import { logger } from '../logger';
 import { messageService } from '../messages/message.service';
 import { absoluteMediaPath } from '../media/media.service';
 import { transcriptionService } from './transcription.service';
+import { costService } from '../costs/cost.service';
 
 /**
  * One transcription pass: transcribe a batch of pending audio messages and
@@ -27,6 +28,11 @@ export async function runTranscriptionPass(): Promise<void> {
         language: result.language ?? null,
         status: 'done',
       });
+      if (result.durationSeconds != null) {
+        await costService
+          .recordTranscription({ messageId: row.id, audioSeconds: result.durationSeconds })
+          .catch((err) => logger.error({ err, id: row.id }, 'Failed to record transcription cost'));
+      }
       logger.info({ id: row.id, chars: result.text.length }, 'Transcribed audio message');
     } catch (err) {
       logger.error({ err, id: row.id }, 'Transcription failed');

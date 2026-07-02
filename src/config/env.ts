@@ -79,6 +79,13 @@ const envSchema = z.object({
   // ── History backfill ─────────────────────────────────────────
   // Per-chat cap for fetchMessages. 0 = Infinity (all locally-available).
   BACKFILL_LIMIT_PER_CHAT: z.coerce.number().int().nonnegative().default(1000),
+
+  // ── API cost tracking ─────────────────────────────────────────
+  // Placeholder rates — verify against each provider's current pricing page
+  // and override here; costs recorded before a correction are NOT rewritten.
+  OPENAI_TRANSCRIBE_COST_PER_MINUTE: z.coerce.number().nonnegative().default(0.006),
+  DEEPSEEK_INPUT_COST_PER_1M_TOKENS: z.coerce.number().nonnegative().default(0.27),
+  DEEPSEEK_OUTPUT_COST_PER_1M_TOKENS: z.coerce.number().nonnegative().default(1.1),
 });
 
 const parsed = envSchema.safeParse(process.env);
