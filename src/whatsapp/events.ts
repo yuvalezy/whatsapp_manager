@@ -28,7 +28,9 @@ export function registerEvents(
   });
 
   client.on('authenticated', () => {
-    service.setState('AUTHENTICATED');
+    if (service.getState() !== 'READY') {
+      service.setState('AUTHENTICATED');
+    }
     service.setLastQr(null);
     logger.info('WhatsApp authenticated — session will be persisted.');
   });
@@ -51,6 +53,10 @@ export function registerEvents(
     backfillService.catchUpAll().catch((err) => {
       logger.error({ err }, 'Auto catch-up backfill failed');
     });
+  });
+
+  client.on('loading_screen', (percent, message) => {
+    logger.info({ percent, message }, 'WhatsApp loading screen');
   });
 
   client.on('disconnected', (reason) => {

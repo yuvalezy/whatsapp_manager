@@ -127,6 +127,19 @@ class WhitelistService {
     );
   }
 
+  /**
+   * Return a contact's preferred language (majority vote from inbound messages).
+   * Falls back to 'es' for contacts without whitelist entries.
+   */
+  async getPreferredLanguage(rawNumber: string): Promise<PreferredLanguage> {
+    const phone = normalizeNumber(rawNumber);
+    const { rows } = await query<{ preferred_language: PreferredLanguage }>(
+      'SELECT preferred_language FROM whitelist WHERE phone_number = $1',
+      [phone],
+    );
+    return rows[0]?.preferred_language ?? 'es';
+  }
+
   async remove(rawNumber: string): Promise<boolean> {
     const phone = normalizeNumber(rawNumber);
     const { rowCount } = await query('DELETE FROM whitelist WHERE phone_number = $1', [phone]);

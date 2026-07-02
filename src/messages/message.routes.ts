@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { messageService } from './message.service';
 import { StoredMessage } from './message.model';
 import { translationService } from '../enrichment/translation.service';
+import { draftReplyService } from '../enrichment/draft-reply.service';
 import { absoluteMediaPath } from '../media/media.service';
 import { whitelistService } from '../whitelist/whitelist.service';
 import { costService } from '../costs/cost.service';
@@ -147,6 +148,52 @@ messagesRouter.post('/:number/translate-all', async (req, res, next) => {
     }
     res.json({ data: { requested: pending.length, translated, skipped, failed } });
   } catch (err) {
+    next(err);
+  }
+});
+
+// POST /messages/:number/draft-reply — AI-generated reply draft based on
+// recent conversation context + user's rough notes. Returns English reply
+// AND a natural $target_language version (unless target is already English).
+messagesRouter.post('/:number/draft-reply', async (req, res, next) => {
+  const { number } = req.params;
+  const body = req.body as { draft?: unknown; messageCount?: unknown };
+  const draft = typeof body.draft === 'string' ? body.draft.trim() : '';
+  const messageCount = typeof body.messageCount === 'number' && Number.isFinite(body.messageCount)
+    ? Math.min(Math.max(Math.round(body.messageCount), 1), 20)
+    : 1;
+
+  if (!draft) {
+    res.status(400).json({ error: '"draft" is required (a string with your rough notes)' });
+    return;
+  }
+
+  try {
+    if (!draftReplyService.available()) {
+      res.status(503).json({ error: 'Draft reply is unavailable — configure a DeepSeek API key.' });
+      return;
+    }
+    if (!whitelistService.isWhitelisted(number)) {
+      res.status(403).json({ error: 'Contact is not whitelisted' });
+      return;
+    }
+
+    const rawMessages = await messageService.listByNumber(number, messageCount, 0);
+    const contextMessages = [...rawMessages].reverse();
+
+    const targetLanguage = await whitelistService.getPreferredLanguage(number);
+
+    const result = await draftReplyService.generate(contextMessages, draft, targetLanguage);
+
+    if (result.inputTokens != null && result.outputTokens != null) {
+      await costService
+        .recordDraftReply({ messageId: null, inputTokens: result.inputTokens, outputTokens: result.outputTokens })
+        .catch((err) => logger.error({ err }, 'Failed to record draft reply cost'));
+    }
+
+    res.json({ data: result });
+  } catch (err) {
+    logger.error({ err, number }, 'Draft reply generation failed');
     next(err);
   }
 });

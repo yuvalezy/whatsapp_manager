@@ -4,6 +4,8 @@ import { env } from '../config/env';
 import { logger } from '../logger';
 import { whatsappService } from '../whatsapp/client';
 import { whitelistService } from '../whitelist/whitelist.service';
+import { messageService } from '../messages/message.service';
+import { buildRoutable } from '../whatsapp/message-mapper';
 import { normalizeNumber, toChatId } from '../utils/phone';
 
 /**
@@ -58,6 +60,12 @@ outboundRouter.post('/send', limiter, async (req, res, next) => {
 
     const sent = await client.sendMessage(toChatId(phone), String(message));
     logger.warn({ to: phone, messageId: sent.id._serialized }, 'OUTBOUND message sent');
+
+    const routable = await buildRoutable(sent, whatsappService.getOwnNumber());
+    await messageService.save(routable).catch((err) =>
+      logger.error({ err, messageId: sent.id._serialized }, 'Failed to persist own outbound message'),
+    );
+
     res.status(201).json({ data: { messageId: sent.id._serialized } });
   } catch (err) {
     next(err);

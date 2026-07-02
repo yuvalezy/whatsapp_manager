@@ -3,17 +3,22 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Avatar } from '@/components/ui/Avatar';
+import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/Toast';
 import { ConversationList } from '@/components/domain/ConversationList';
 import { MessageBubble } from '@/components/domain/MessageBubble';
+import { ComposeReply } from '@/components/domain/ComposeReply';
 import { PhoneNumber } from '@/components/domain/PhoneNumber';
 import { useThreads, useConversationThread, useTranslateAll } from '@/hooks/useThreads';
+import { useStatus } from '@/hooks/useStatus';
 import { formatPhone } from '@/lib/format';
+import type { ComposeState } from '@/types';
 
 // ============================================================================
 // ConversationsPage — WhatsApp-style two-pane view: whitelisted contacts on
 // the left (sorted by last message), chat bubbles for the selected thread on
-// the right, with a "Translate all" action for the open conversation.
+// the right, with a "Translate all" action for the open conversation and an
+// AI-powered reply composer at the bottom.
 // ============================================================================
 
 export function ConversationsPage() {
@@ -21,6 +26,12 @@ export function ConversationsPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const { toast } = useToast();
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const [composeState, setComposeState] = useState<ComposeState>('idle');
+  const [messageCount, setMessageCount] = useState(1);
+
+  const { data: status } = useStatus();
+  const outboundEnabled = status?.outboundEnabled ?? false;
 
   // Default to the most-recent conversation once the list loads.
   useEffect(() => {
@@ -39,6 +50,16 @@ export function ConversationsPage() {
       ),
     [messages],
   );
+
+  const highlightedIds = useMemo(() => {
+    if (composeState === 'idle') return new Set<string | number>();
+    const tail = ordered.slice(-Math.min(messageCount, ordered.length));
+    return new Set(tail.map((m) => m.id));
+  }, [ordered, composeState, messageCount]);
+
+  const resetCompose = () => {
+    setComposeState('idle');
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
@@ -77,7 +98,10 @@ export function ConversationsPage() {
           <ConversationList
             threads={threads ?? []}
             selected={selected}
-            onSelect={setSelected}
+            onSelect={(number) => {
+              setSelected(number);
+              setComposeState('idle');
+            }}
             loading={threadsLoading}
           />
         </div>
@@ -122,12 +146,33 @@ export function ConversationsPage() {
                 ) : (
                   <div className="flex flex-col gap-2.5">
                     {ordered.map((m) => (
-                      <MessageBubble key={m.id} message={m} />
+                      <MessageBubble key={m.id} message={m} highlighted={highlightedIds.has(m.id)} />
                     ))}
                     <div ref={bottomRef} />
                   </div>
                 )}
               </div>
+
+              {outboundEnabled ? (
+                <ComposeReply
+                  contactNumber={selected}
+                  messageCount={messageCount}
+                  onMessageCountChange={setMessageCount}
+                  composeState={composeState}
+                  onComposeStateChange={(state) => {
+                    if (state === 'idle') {
+                      resetCompose();
+                    } else {
+                      setComposeState(state);
+                    }
+                  }}
+                />
+              ) : (
+                <div className="shrink-0 border-t border-line-strong bg-surface px-5 py-3 text-center text-[12px] text-fg-muted">
+                  <Icon name="lock" size={13} className="mr-1.5 inline-block opacity-60" />
+                  Outbound messaging is disabled
+                </div>
+              )}
             </>
           )}
         </div>

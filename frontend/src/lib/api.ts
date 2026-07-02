@@ -16,6 +16,7 @@ import type {
   CredentialSummary,
   CredentialsList,
   DailyCost,
+  DraftReplyResult,
   EzyBusinessPartner,
   EzyContact,
   EzyLinkInput,
@@ -184,4 +185,18 @@ export const api = {
   costSummary: () => request<CostSummary>('/costs/summary'),
   costDaily: (days = 30) => request<DailyCost[]>(`/costs/daily?days=${days}`),
   listCosts: (limit = 100) => request<CostEntry[]>(`/costs?limit=${limit}`),
+
+  // AI-powered reply drafting — reads last N messages as context + user's notes.
+  draftReply: (number: string, draft: string, messageCount = 5) =>
+    request<DraftReplyResult>(`/messages/${encodeURIComponent(number)}/draft-reply`, {
+      method: 'POST',
+      body: JSON.stringify({ draft, messageCount }),
+    }),
+
+  // Outbound send (gated by ENABLE_OUTBOUND, rate-limited, whitelist-only).
+  sendMessage: (number: string, message: string) =>
+    request<{ messageId: string }>('/outbound/send', {
+      method: 'POST',
+      body: JSON.stringify({ number, message }),
+    }),
 };

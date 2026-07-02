@@ -219,3 +219,16 @@ export interface BackfillStatus {
   currentNumber: string | null;
   error: string | null;
 }
+
+export interface DraftReplyRequest {
+  draft: string;
+  messageCount?: number;
+}
+
+export interface DraftReplyResult {
+  english: string;
+  translated: string | null;
+  targetLanguage: PreferredLanguage;
+}
+
+export type ComposeState = 'idle' | 'composing' | 'generating' | 'preview' | 'sending';

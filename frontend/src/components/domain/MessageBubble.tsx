@@ -13,9 +13,10 @@ import type { StoredMessage } from '@/types';
 
 export interface MessageBubbleProps {
   message: StoredMessage;
+  highlighted?: boolean;
 }
 
-export function MessageBubble({ message: msg }: MessageBubbleProps) {
+export function MessageBubble({ message: msg, highlighted = false }: MessageBubbleProps) {
   const isOutbound = msg.direction === 'outbound';
   const hasMediaFile = msg.media_status === 'downloaded';
   const hasBody = !!msg.body?.trim();
@@ -29,7 +30,7 @@ export function MessageBubble({ message: msg }: MessageBubbleProps) {
   });
 
   return (
-    <div className={cn('flex', isOutbound ? 'justify-end' : 'justify-start')}>
+    <div className={cn('flex', isOutbound ? 'justify-end' : 'justify-start', highlighted && 'border-l-[3px] border-primary pl-2')}>
       <div
         className={cn(
           'flex max-w-[min(70%,480px)] flex-col gap-1.5 px-3.5 py-2.5 text-fg',
