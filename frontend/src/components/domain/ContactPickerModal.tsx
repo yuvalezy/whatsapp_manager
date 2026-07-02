@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Checkbox } from '@/components/ui/Checkbox';
@@ -39,6 +39,15 @@ export function ContactPickerModal({
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  // Always start from a clean slate on open — covers every close path (Cancel,
+  // backdrop, X, or the parent closing it directly after a successful add).
+  useEffect(() => {
+    if (open) {
+      setSearch('');
+      setSelected(new Set());
+    }
+  }, [open]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return contacts;
@@ -54,13 +63,7 @@ export function ContactPickerModal({
     });
   };
 
-  const reset = () => {
-    setSearch('');
-    setSelected(new Set());
-  };
-
   const handleClose = () => {
-    reset();
     onClose?.();
   };
 
