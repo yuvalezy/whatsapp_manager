@@ -2,6 +2,8 @@ import { query } from '../db';
 import { logger } from '../logger';
 import { normalizeNumber, isValidNumber } from '../utils/phone';
 
+export type PreferredLanguage = 'es' | 'en' | 'he';
+
 export interface WhitelistEntry {
   id: number;
   phone_number: string;
@@ -13,6 +15,7 @@ export interface WhitelistEntry {
   ezy_contact_id: string | null;
   ezy_contact_name: string | null;
   ezy_linked_at: string | null;
+  preferred_language: PreferredLanguage;
 }
 
 export interface EzyLinkInput {
@@ -24,7 +27,7 @@ export interface EzyLinkInput {
 }
 
 const ENTRY_COLUMNS =
-  'id, phone_number, label, created_at, ezy_bp_id, ezy_bp_code, ezy_bp_name, ezy_contact_id, ezy_contact_name, ezy_linked_at';
+  'id, phone_number, label, created_at, ezy_bp_id, ezy_bp_code, ezy_bp_name, ezy_contact_id, ezy_contact_name, ezy_linked_at, preferred_language';
 
 export class ValidationError extends Error {}
 
@@ -91,6 +94,37 @@ class WhitelistService {
     );
     if (rows[0]) logger.info({ id, bpId: link.bpId, contactId: link.contactId }, 'Whitelist entry linked to EZY Portal');
     return rows[0] ?? null;
+  }
+
+  /**
+   * Bump the running per-language counter for an inbound message and
+   * recompute `preferred_language` (majority of es/en/he counts; ties and
+   * everything else default to 'es'). Self-corrects over time instead of
+   * letting one ambiguous message flip the setting.
+   */
+  async recordInboundLanguage(rawNumber: string, lang: PreferredLanguage): Promise<void> {
+    const phone = normalizeNumber(rawNumber);
+    await query(
+      `WITH updated AS (
+         UPDATE whitelist
+            SET lang_es_count = lang_es_count + ($2 = 'es')::int,
+                lang_en_count = lang_en_count + ($2 = 'en')::int,
+                lang_he_count = lang_he_count + ($2 = 'he')::int
+          WHERE phone_number = $1
+          RETURNING id, lang_es_count, lang_en_count, lang_he_count
+       )
+       UPDATE whitelist w
+          SET preferred_language = CASE
+                WHEN updated.lang_en_count > updated.lang_es_count
+                     AND updated.lang_en_count >= updated.lang_he_count THEN 'en'
+                WHEN updated.lang_he_count > updated.lang_es_count
+                     AND updated.lang_he_count > updated.lang_en_count THEN 'he'
+                ELSE 'es'
+              END
+         FROM updated
+        WHERE w.id = updated.id`,
+      [phone, lang],
+    );
   }
 
   async remove(rawNumber: string): Promise<boolean> {

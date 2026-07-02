@@ -78,9 +78,9 @@ const SAMPLE_MESSAGES: StoredMessage[] = [
 ];
 
 const WHITELIST_ROWS = [
-  { id: '1', phone_number: '+14155550132', label: 'Mom', created_at: new Date(Date.now() - 41 * 86400000).toISOString() },
-  { id: '2', phone_number: '+16285550198', label: 'Alex (work)', created_at: new Date(Date.now() - 29 * 86400000).toISOString() },
-  { id: '3', phone_number: '+442075550199', label: '', created_at: new Date(Date.now() - 12 * 86400000).toISOString() },
+  { id: '1', phone_number: '+14155550132', label: 'Mom', created_at: new Date(Date.now() - 41 * 86400000).toISOString(), preferred_language: 'en' as const },
+  { id: '2', phone_number: '+16285550198', label: 'Alex (work)', created_at: new Date(Date.now() - 29 * 86400000).toISOString(), preferred_language: 'es' as const },
+  { id: '3', phone_number: '+442075550199', label: '', created_at: new Date(Date.now() - 12 * 86400000).toISOString(), preferred_language: 'he' as const },
 ];
 
 const readyAt = new Date(Date.now() - 6 * 3600 * 1000).toISOString();

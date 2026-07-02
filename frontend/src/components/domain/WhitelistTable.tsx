@@ -3,11 +3,14 @@ import { cn } from '@/lib/cn';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { IconButton } from '@/components/ui/IconButton';
+import { Badge } from '@/components/ui/Badge';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { formatPhone } from '@/lib/format';
 import { PhoneNumber } from './PhoneNumber';
 import { RelativeTime } from './RelativeTime';
-import type { WhitelistEntry } from '@/types';
+import type { PreferredLanguage, WhitelistEntry } from '@/types';
+
+const LANGUAGE_LABEL: Record<PreferredLanguage, string> = { es: 'ES', en: 'EN', he: 'HE' };
 
 // ============================================================================
 // WhitelistTable — number / label / added / remove, with loading and empty
@@ -60,6 +63,7 @@ export function WhitelistTable({ rows = [], loading = false, deletingId, onDelet
             <tr>
               <th className={TH}>Number</th>
               <th className={TH}>Label</th>
+              <th className={TH}>Lang</th>
               <th className={TH}>EZY Portal</th>
               <th className={TH}>Added</th>
               <th className={cn(TH, 'w-20')} aria-label="Actions" />
@@ -75,6 +79,9 @@ export function WhitelistTable({ rows = [], loading = false, deletingId, onDelet
                   <PhoneNumber value={row.phone_number} />
                 </td>
                 <td className={TD}>{row.label || '—'}</td>
+                <td className={TD}>
+                  <Badge label={LANGUAGE_LABEL[row.preferred_language]} tone="neutral" />
+                </td>
                 <td className={TD}>
                   {row.ezy_bp_name ? (
                     <span className="flex flex-col">

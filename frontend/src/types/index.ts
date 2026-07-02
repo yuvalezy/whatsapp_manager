@@ -53,6 +53,8 @@ export interface QrData {
   dataUrl: string | null;
 }
 
+export type PreferredLanguage = 'es' | 'en' | 'he';
+
 export interface WhitelistEntry {
   id: string | number;
   phone_number: string;
@@ -64,6 +66,7 @@ export interface WhitelistEntry {
   ezy_contact_id?: string | null;
   ezy_contact_name?: string | null;
   ezy_linked_at?: string | null;
+  preferred_language: PreferredLanguage;
 }
 
 export interface EzyBusinessPartner {

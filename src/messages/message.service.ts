@@ -1,6 +1,8 @@
 import { query } from '../db';
 import { normalizeNumber } from '../utils/phone';
 import { isAudioType } from '../media/media.service';
+import { logger } from '../logger';
+import { whitelistService, PreferredLanguage } from '../whitelist/whitelist.service';
 import {
   PendingTranscription,
   RoutableMessage,
@@ -8,6 +10,8 @@ import {
   TranscriptionStatus,
   TranslationStatus,
 } from './message.model';
+
+const LANGUAGE_VOTES: readonly PreferredLanguage[] = ['es', 'en', 'he'];
 
 const SELECT_COLS = `
   id, message_id, chat_id, contact_number, sender_number, sender_name,
@@ -54,7 +58,27 @@ class MessageService {
         transcriptionStatus,
       ],
     );
-    return (rowCount ?? 0) > 0;
+    const inserted = (rowCount ?? 0) > 0;
+
+    // Feed the free per-message language hint into the contact's running
+    // preferred-language vote. Best-effort — must never break persistence,
+    // which has already succeeded by this point.
+    if (
+      inserted &&
+      msg.direction === 'inbound' &&
+      (LANGUAGE_VOTES as readonly string[]).includes(msg.detectedLanguage ?? '')
+    ) {
+      try {
+        await whitelistService.recordInboundLanguage(
+          msg.contactNumber ?? msg.senderNumber,
+          msg.detectedLanguage as PreferredLanguage,
+        );
+      } catch (err) {
+        logger.error({ err, contactNumber: msg.contactNumber }, 'Failed to record inbound language vote');
+      }
+    }
+
+    return inserted;
   }
 
   async list(limit = 100, offset = 0): Promise<StoredMessage[]> {
