@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -23,7 +24,8 @@ import type { ComposeState } from '@/types';
 
 export function ConversationsPage() {
   const { data: threads, isLoading: threadsLoading } = useThreads();
-  const [selected, setSelected] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selected = searchParams.get('number');
   const { toast } = useToast();
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -33,12 +35,12 @@ export function ConversationsPage() {
   const { data: status } = useStatus();
   const outboundEnabled = status?.outboundEnabled ?? false;
 
-  // Default to the most-recent conversation once the list loads.
+  // Default to the most-recent conversation if no number is selected.
   useEffect(() => {
     if (!selected && threads && threads.length > 0) {
-      setSelected(threads[0].phone_number);
+      setSearchParams({ number: threads[0].phone_number });
     }
-  }, [threads, selected]);
+  }, [selected, threads, setSearchParams]);
 
   const { data: messages, isLoading: threadLoading } = useConversationThread(selected);
   const translateAll = useTranslateAll();
@@ -99,7 +101,7 @@ export function ConversationsPage() {
             threads={threads ?? []}
             selected={selected}
             onSelect={(number) => {
-              setSelected(number);
+              setSearchParams({ number });
               setComposeState('idle');
             }}
             loading={threadsLoading}

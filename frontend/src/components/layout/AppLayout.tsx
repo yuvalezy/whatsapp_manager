@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { NAV_ITEMS, activeKeyForPath } from './nav';
+import { useSse } from '@/hooks/useSse';
 
 // ============================================================================
 // AppLayout — the application shell: Sidebar + TopBar + routed content.
@@ -15,6 +16,8 @@ export function AppLayout() {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const activeKey = activeKeyForPath(location.pathname);
+
+  useSse();
 
   const handleNavigate = (key: string) => {
     const item = NAV_ITEMS.find((n) => n.key === key);

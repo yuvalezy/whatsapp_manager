@@ -8,6 +8,22 @@ import { transcriptionService } from '../enrichment/transcription.service';
 import { translationService } from '../enrichment/translation.service';
 import { normalizeNumber } from '../utils/phone';
 
+/** Assemble the full status snapshot for /status and SSE broadcasts. */
+export function buildStatusData() {
+  const hasOpenAiKey = transcriptionService.available();
+  return {
+    ...whatsappService.status(),
+    whitelistCount: whitelistService.size(),
+    outboundEnabled: env.ENABLE_OUTBOUND,
+    monitorGroups: env.MONITOR_GROUPS,
+    ignored: ignoredStats.snapshot(),
+    ignoredTotal: ignoredStats.total(),
+    transcriptionEnabled: env.ENABLE_TRANSCRIPTION && hasOpenAiKey,
+    hasOpenAiKey,
+    hasDeepseekKey: translationService.available(),
+  };
+}
+
 export const whatsappRouter = Router();
 
 // GET /qr — HTML page for browsers, or JSON with `?format=json`
@@ -29,20 +45,7 @@ whatsappRouter.get('/qr', async (req, res, next) => {
 
 // GET /status — connection + monitoring snapshot
 whatsappRouter.get('/status', (_req, res) => {
-  const hasOpenAiKey = transcriptionService.available();
-  res.json({
-    data: {
-      ...whatsappService.status(),
-      whitelistCount: whitelistService.size(),
-      outboundEnabled: env.ENABLE_OUTBOUND,
-      monitorGroups: env.MONITOR_GROUPS,
-      ignored: ignoredStats.snapshot(),
-      ignoredTotal: ignoredStats.total(),
-      transcriptionEnabled: env.ENABLE_TRANSCRIPTION && hasOpenAiKey,
-      hasOpenAiKey,
-      hasDeepseekKey: translationService.available(),
-    },
-  });
+  res.json({ data: buildStatusData() });
 });
 
 // GET /contacts — real WhatsApp conversations (1:1 chats) from the linked

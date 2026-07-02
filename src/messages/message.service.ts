@@ -3,6 +3,7 @@ import { normalizeNumber } from '../utils/phone';
 import { isAudioType } from '../media/media.service';
 import { logger } from '../logger';
 import { whitelistService, PreferredLanguage } from '../whitelist/whitelist.service';
+import { sseManager } from '../sse';
 import {
   PendingTranscription,
   RoutableMessage,
@@ -59,6 +60,22 @@ class MessageService {
       ],
     );
     const inserted = (rowCount ?? 0) > 0;
+
+    // Push the newly inserted message to all SSE clients so the frontend
+    // updates in real time without polling.
+    if (inserted) {
+      try {
+        const { rows: full } = await query<StoredMessage>(
+          `SELECT ${SELECT_COLS} FROM messages WHERE message_id = $1`,
+          [msg.messageId],
+        );
+        if (full[0]) {
+          sseManager.broadcast('message', full[0]);
+        }
+      } catch {
+        /* SSE is best-effort — never break persistence */
+      }
+    }
 
     // Feed the free per-message language hint into the contact's running
     // preferred-language vote. Best-effort — must never break persistence,

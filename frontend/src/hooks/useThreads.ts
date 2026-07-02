@@ -3,27 +3,28 @@ import { api } from '@/lib/api';
 import { normalizeNumber } from '@/lib/format';
 import type { ConversationThread, StoredMessage, TranslateAllResult } from '@/types';
 
-/** One row per whitelisted contact — their latest message, sorted by recency. Polls for new arrivals. */
-export function useThreads(pollMs = 10_000) {
+/** One row per whitelisted contact — their latest message, sorted by recency.
+  * Updated in real time via SSE (no polling). */
+export function useThreads(pollMs = 0) {
   return useQuery<ConversationThread[]>({
     queryKey: ['threads'],
     queryFn: api.listThreads,
-    refetchInterval: pollMs,
+    refetchInterval: pollMs || false,
   });
 }
 
 /**
- * Full thread for the open conversation, polling for new messages. Shares its
- * query key with `useMessagesByNumber(number, {limit:500})` so translate
- * mutations (which invalidate the `['messages']` prefix) refresh this too.
+ * Full thread for the open conversation. Updated in real time via SSE when new
+ * messages arrive for this contact (no polling). Shares its query key with
+ * `useMessagesByNumber(number, {limit:500})` so translate mutations refresh this too.
  */
-export function useConversationThread(number: string | null | undefined, pollMs = 5000) {
+export function useConversationThread(number: string | null | undefined, pollMs = 0) {
   const normalized = number ? normalizeNumber(number) : '';
   return useQuery<StoredMessage[]>({
     queryKey: ['messages', 'by-number', normalized, { limit: 500 }],
     queryFn: () => api.listMessagesByNumber(normalized, { limit: 500 }),
     enabled: !!normalized,
-    refetchInterval: pollMs,
+    refetchInterval: pollMs || false,
   });
 }
 

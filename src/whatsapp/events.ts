@@ -7,6 +7,8 @@ import { ignoredStats } from '../messages/ignored-stats';
 import { MessageRouter } from '../router/message-router';
 import { buildRoutable, contactNumberOf } from './message-mapper';
 import { backfillService } from '../backfill/backfill.service';
+import { sseManager } from '../sse';
+import { buildStatusData } from '../whatsapp/whatsapp.routes';
 import type { WhatsAppService } from './client';
 
 /**
@@ -22,6 +24,7 @@ export function registerEvents(
   client.on('qr', (qr: string) => {
     service.setLastQr(qr);
     service.setState('QR_READY');
+    sseManager.broadcast('status', buildStatusData());
     logger.info('QR code received — scan it in WhatsApp → Linked devices.');
     printQrToTerminal(qr);
     logger.info(`Prefer a browser? Open http://localhost:${env.PORT}/qr`);
@@ -30,6 +33,7 @@ export function registerEvents(
   client.on('authenticated', () => {
     if (service.getState() !== 'READY') {
       service.setState('AUTHENTICATED');
+      sseManager.broadcast('status', buildStatusData());
     }
     service.setLastQr(null);
     logger.info('WhatsApp authenticated — session will be persisted.');
@@ -37,6 +41,7 @@ export function registerEvents(
 
   client.on('auth_failure', (msg) => {
     service.setState('AUTH_FAILURE');
+    sseManager.broadcast('status', buildStatusData());
     logger.error({ msg }, 'WhatsApp authentication failed');
   });
 
@@ -46,6 +51,7 @@ export function registerEvents(
       pushname: info?.pushname,
       wid: info?.wid?._serialized,
     });
+    sseManager.broadcast('status', buildStatusData());
     logger.info({ pushname: info?.pushname }, 'WhatsApp client is READY');
 
     // Close any gap left by downtime — backfills each whitelisted contact from
@@ -61,6 +67,7 @@ export function registerEvents(
 
   client.on('disconnected', (reason) => {
     service.setState('DISCONNECTED');
+    sseManager.broadcast('status', buildStatusData());
     logger.warn({ reason }, 'WhatsApp disconnected');
   });
 

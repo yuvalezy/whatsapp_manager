@@ -27,6 +27,7 @@ const API_PREFIXES = [
   '/costs',
   '/contacts',
   '/ezy-portal',
+  '/events',
 ];
 
 const bypass = (req: IncomingMessage) => (req.headers.accept?.includes('text/html') ? '/index.html' : undefined);

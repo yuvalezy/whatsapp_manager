@@ -18,6 +18,8 @@ import { runTranscriptionPass } from './enrichment/worker';
 import { whatsappService } from './whatsapp/client';
 import { ignoredStats } from './messages/ignored-stats';
 import { messageService } from './messages/message.service';
+import { sseManager } from './sse';
+import { buildStatusData } from './whatsapp/whatsapp.routes';
 
 const IGNORED_FLUSH_INTERVAL_MS = 30_000;
 
@@ -87,6 +89,20 @@ function buildApp() {
   app.use('/costs', costsRouter);
   app.use('/ezy-portal', ezyPortalRouter);
 
+  // SSE event stream — push messages and status changes to connected clients.
+  app.get('/events', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    sseManager.addClient(res);
+
+    req.on('close', () => sseManager.removeClient(res));
+    req.on('error', () => sseManager.removeClient(res));
+  });
+
   // 404
   app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 
@@ -128,7 +144,9 @@ async function main(): Promise<void> {
   });
 
   const flushTimer = setInterval(() => {
-    void flushIgnored();
+    void flushIgnored().then(() => {
+      sseManager.broadcast('status', buildStatusData());
+    });
   }, IGNORED_FLUSH_INTERVAL_MS);
   flushTimer.unref();
 
