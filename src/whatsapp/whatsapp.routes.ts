@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { whatsappService } from './client';
 import { qrToDataUrl, qrHtmlPage } from './qr';
 import { whitelistService } from '../whitelist/whitelist.service';
+import { groupService } from '../groups/group.service';
 import { ignoredStats } from '../messages/ignored-stats';
 import { env } from '../config/env';
 import { transcriptionService } from '../enrichment/transcription.service';
@@ -15,7 +16,8 @@ export function buildStatusData() {
     ...whatsappService.status(),
     whitelistCount: whitelistService.size(),
     outboundEnabled: env.ENABLE_OUTBOUND,
-    monitorGroups: env.MONITOR_GROUPS,
+    monitorGroups: groupService.size() > 0,
+    monitoredGroupCount: groupService.size(),
     ignored: ignoredStats.snapshot(),
     ignoredTotal: ignoredStats.total(),
     transcriptionEnabled: env.ENABLE_TRANSCRIPTION && hasOpenAiKey,

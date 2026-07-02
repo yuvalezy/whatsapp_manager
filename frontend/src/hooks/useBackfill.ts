@@ -25,3 +25,11 @@ export function useRunBackfillNumber() {
       api.runBackfillNumber(number, { from, to }),
   });
 }
+
+/** Trigger a backfill for a single monitored group (optional date window). */
+export function useRunBackfillGroup() {
+  return useMutation({
+    mutationFn: ({ groupId, from, to }: { groupId: string; from?: string; to?: string }) =>
+      api.runBackfillGroup(groupId, { from, to }),
+  });
+}

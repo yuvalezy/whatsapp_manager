@@ -26,6 +26,7 @@ const API_PREFIXES = [
   '/backfill',
   '/costs',
   '/contacts',
+  '/groups',
   '/ezy-portal',
   '/events',
 ];

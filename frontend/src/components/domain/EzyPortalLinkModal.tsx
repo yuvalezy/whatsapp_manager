@@ -9,17 +9,23 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/lib/cn';
 import { useCreateEzyContact, useEzyBusinessPartners, useEzyContacts } from '@/hooks/useEzyPortal';
-import type { EzyBusinessPartner, EzyLinkInput, WhitelistEntry } from '@/types';
+import type { EzyBusinessPartner, EzyLinkInput, GroupEntry, WhitelistEntry } from '@/types';
 
 // ============================================================================
-// EzyPortalLinkModal — link a whitelisted number to an EZY Portal business
-// partner + contact. Step 1: search/select the BP. Step 2: pick one of its
-// contacts, or create a new one inline (auto-selected once created).
+// EzyPortalLinkModal — link a target to an EZY Portal business partner.
+//  - Contacts (whitelist entries): BP + contact. Step 1 pick BP, step 2 pick/
+//    create a contact.
+//  - Groups (requireContact=false): BP only — the contact step is skipped.
 // ============================================================================
 
 export interface EzyPortalLinkModalProps {
   open: boolean;
-  entry: WhitelistEntry | null;
+  /** Whitelist entry being linked (BP + contact mode). */
+  entry?: WhitelistEntry | null;
+  /** Group being linked (BP-only mode). Mutually exclusive with `entry`. */
+  group?: GroupEntry | null;
+  /** When false, skip the contact step and link the BP alone (groups). Default true. */
+  requireContact?: boolean;
   submitting?: boolean;
   error?: string | null;
   onClose?: () => void;
@@ -51,7 +57,16 @@ const ROLE_OPTIONS = [
   { value: 'other', label: 'Other' },
 ];
 
-export function EzyPortalLinkModal({ open, entry, submitting = false, error, onClose, onSave }: EzyPortalLinkModalProps) {
+export function EzyPortalLinkModal({
+  open,
+  entry,
+  group,
+  requireContact = true,
+  submitting = false,
+  error,
+  onClose,
+  onSave,
+}: EzyPortalLinkModalProps) {
   const [search, setSearch] = useState('');
   const [selectedBp, setSelectedBp] = useState<EzyBusinessPartner | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
@@ -64,7 +79,15 @@ export function EzyPortalLinkModal({ open, entry, submitting = false, error, onC
   const [newMobile, setNewMobile] = useState('');
   const [newWhatsapp, setNewWhatsapp] = useState('');
 
-  // Always start from a clean slate on open, seeded from the entry's current link (if any).
+  // The link target is either a whitelist entry (BP + contact) or a group (BP only).
+  const targetName = entry
+    ? entry.label || `+${entry.phone_number}`
+    : group?.subject || 'this group';
+  const seedBpId = entry?.ezy_bp_id ?? group?.ezy_bp_id ?? null;
+  const seedBpCode = entry?.ezy_bp_code ?? group?.ezy_bp_code ?? '';
+  const seedBpName = entry?.ezy_bp_name ?? group?.ezy_bp_name ?? '';
+
+  // Always start from a clean slate on open, seeded from the target's current link (if any).
   useEffect(() => {
     if (!open) return;
     setSearch('');
@@ -77,23 +100,17 @@ export function EzyPortalLinkModal({ open, entry, submitting = false, error, onC
     setNewEmail('');
     setNewMobile('');
     setNewWhatsapp(entry ? `+${entry.phone_number}` : '');
-    if (entry?.ezy_bp_id) {
-      setSelectedBp({
-        id: entry.ezy_bp_id,
-        code: entry.ezy_bp_code ?? '',
-        name: entry.ezy_bp_name ?? '',
-        status: 'active',
-        roles: [],
-      });
-      setSelectedContactId(entry.ezy_contact_id ?? null);
+    if (seedBpId) {
+      setSelectedBp({ id: seedBpId, code: seedBpCode, name: seedBpName, status: 'active', roles: [] });
+      setSelectedContactId(entry?.ezy_contact_id ?? null);
     } else {
       setSelectedBp(null);
       setSelectedContactId(null);
     }
-  }, [open, entry]);
+  }, [open, entry, group]);
 
   const bpResults = useEzyBusinessPartners(search, open && selectedBp == null);
-  const contacts = useEzyContacts(selectedBp?.id ?? null);
+  const contacts = useEzyContacts(requireContact ? (selectedBp?.id ?? null) : null);
   const createContact = useCreateEzyContact(selectedBp?.id ?? null);
 
   const selectedContact = useMemo(
@@ -134,13 +151,14 @@ export function EzyPortalLinkModal({ open, entry, submitting = false, error, onC
   };
 
   const handleSave = () => {
-    if (!selectedBp || !selectedContact) return;
+    if (!selectedBp) return;
+    if (requireContact && !selectedContact) return;
     onSave?.({
       bpId: selectedBp.id,
       bpCode: selectedBp.code,
       bpName: selectedBp.name,
-      contactId: selectedContact.id,
-      contactName: `${selectedContact.firstName} ${selectedContact.lastName}`.trim(),
+      contactId: selectedContact?.id ?? '',
+      contactName: selectedContact ? `${selectedContact.firstName} ${selectedContact.lastName}`.trim() : '',
     });
   };
 
@@ -149,11 +167,13 @@ export function EzyPortalLinkModal({ open, entry, submitting = false, error, onC
       open={open}
       title="Link to EZY Portal"
       description={
-        entry ? `Set the business partner and contact for ${entry.label || `+${entry.phone_number}`}.` : undefined
+        requireContact
+          ? `Set the business partner and contact for ${targetName}.`
+          : `Assign a business partner to ${targetName}.`
       }
       size="lg"
       primaryLabel="Save link"
-      primaryDisabled={selectedBp == null || selectedContact == null}
+      primaryDisabled={selectedBp == null || (requireContact && selectedContact == null)}
       loading={submitting}
       hideFooter={selectedBp == null}
       onPrimary={handleSave}
@@ -227,6 +247,8 @@ export function EzyPortalLinkModal({ open, entry, submitting = false, error, onC
               <Button variant="ghost" size="sm" label="Change" onClick={handleChangeBp} />
             </div>
 
+            {requireContact && (
+            <>
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-[0.04em] text-fg-muted">Contact</span>
               <Button
@@ -329,6 +351,8 @@ export function EzyPortalLinkModal({ open, entry, submitting = false, error, onC
                   );
                 })}
               </div>
+            )}
+            </>
             )}
           </>
         )}

@@ -17,10 +17,12 @@ import {
   useDeleteCredential,
 } from '@/hooks/useCredentials';
 import { useWhitelist } from '@/hooks/useWhitelist';
+import { useGroups } from '@/hooks/useGroups';
 import {
   useBackfillStatus,
   useRunBackfill,
   useRunBackfillNumber,
+  useRunBackfillGroup,
 } from '@/hooks/useBackfill';
 import { formatPhone } from '@/lib/format';
 
@@ -226,9 +228,11 @@ function CredentialsTab() {
 
 function BackfillTab() {
   const { data: whitelist } = useWhitelist();
+  const { data: groups } = useGroups();
   const { data: status } = useBackfillStatus();
   const runAll = useRunBackfill();
   const runOne = useRunBackfillNumber();
+  const runGroup = useRunBackfillGroup();
   const { toast } = useToast();
 
   const [target, setTarget] = useState('all');
@@ -236,13 +240,19 @@ function BackfillTab() {
   const [to, setTo] = useState('');
 
   const running = status?.running ?? false;
-  const busy = running || runAll.isPending || runOne.isPending;
+  const busy = running || runAll.isPending || runOne.isPending || runGroup.isPending;
 
+  // Values are prefixed so a group id can never collide with a phone number:
+  // 'all' = everything, 'c:<number>' = one contact, 'g:<groupId>' = one group.
   const options = [
-    { value: 'all', label: 'All whitelisted contacts' },
+    { value: 'all', label: 'All contacts & groups' },
     ...(whitelist ?? []).map((w) => ({
-      value: w.phone_number,
+      value: `c:${w.phone_number}`,
       label: w.label ? `${w.label} · ${formatPhone(w.phone_number)}` : formatPhone(w.phone_number),
+    })),
+    ...(groups ?? []).map((g) => ({
+      value: `g:${g.group_id}`,
+      label: `Group · ${g.subject || g.group_id}`,
     })),
   ];
 
@@ -257,8 +267,13 @@ function BackfillTab() {
         description: e instanceof Error ? e.message : 'Is WhatsApp linked and ready?',
       });
 
-    if (target === 'all') runAll.mutate(window, { onSuccess, onError });
-    else runOne.mutate({ number: target, ...window }, { onSuccess, onError });
+    if (target === 'all') {
+      runAll.mutate(window, { onSuccess, onError });
+    } else if (target.startsWith('g:')) {
+      runGroup.mutate({ groupId: target.slice(2), ...window }, { onSuccess, onError });
+    } else {
+      runOne.mutate({ number: target.replace(/^c:/, ''), ...window }, { onSuccess, onError });
+    }
   };
 
   return (
@@ -267,7 +282,7 @@ function BackfillTab() {
         <span className={EYEBROW}>Pull conversation history</span>
         <div className="flex flex-wrap items-end gap-3">
           <Select
-            label="Contact"
+            label="Target"
             value={target}
             options={options}
             onChange={setTarget}

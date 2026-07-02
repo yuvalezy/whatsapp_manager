@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { backfillService } from './backfill.service';
 import { whatsappService } from '../whatsapp/client';
+import { groupService } from '../groups/group.service';
 
 /**
  * Manual history backfill for whitelisted contacts. Runs in the background and
@@ -25,7 +26,7 @@ function toEpoch(v: string | number | undefined): number | undefined {
   return Date.parse(v);
 }
 
-function runBackfill(req: Request, res: Response, number?: string): void {
+function runBackfill(req: Request, res: Response, target: { number?: string; groupId?: string } = {}): void {
   const parsed = bodySchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid request body' });
@@ -50,7 +51,7 @@ function runBackfill(req: Request, res: Response, number?: string): void {
     return;
   }
 
-  backfillService.start({ number, since, until });
+  backfillService.start({ ...target, since, until });
   res.status(202).json({ data: backfillService.getStatus() });
 }
 
@@ -59,8 +60,20 @@ backfillRouter.get('/status', (_req, res) => {
   res.json({ data: backfillService.getStatus() });
 });
 
-// POST /backfill — all whitelisted contacts
+// POST /backfill — all whitelisted contacts + monitored groups
 backfillRouter.post('/', (req, res) => runBackfill(req, res));
 
+// POST /backfill/group/:groupId — a single monitored group (registered before
+// /:number so it isn't swallowed by the single-segment contact route). Only
+// monitored groups can be backfilled — group content is stored for opted-in
+// groups only (privacy invariant).
+backfillRouter.post('/group/:groupId', (req, res) => {
+  if (!groupService.isMonitored(req.params.groupId)) {
+    res.status(404).json({ error: 'Group is not monitored' });
+    return;
+  }
+  runBackfill(req, res, { groupId: req.params.groupId });
+});
+
 // POST /backfill/:number — a single contact
-backfillRouter.post('/:number', (req, res) => runBackfill(req, res, req.params.number));
+backfillRouter.post('/:number', (req, res) => runBackfill(req, res, { number: req.params.number }));

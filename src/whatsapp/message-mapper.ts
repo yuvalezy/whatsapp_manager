@@ -31,18 +31,23 @@ export function contactNumberOf(message: Message): string {
  * `contactNumberOverride` pins the thread key when the caller already knows the
  * real phone number — required whenever the chat is LID-addressed (live
  * ingestion resolves it via lid-resolver; backfill/outbound know the number
- * upfront). It also keys the media folder, so it must be applied here rather
- * than patched onto the result.
+ * upfront) and for groups (the thread key is the group id). It also keys the
+ * media folder, so it must be applied here rather than patched onto the result.
+ *
+ * `senderNumberOverride` pins the actual author for group messages, where the
+ * thread key (contactNumber = group id) differs from who sent the message. For
+ * 1:1 it is omitted and the sender collapses to the contact (or own number).
  */
 export async function buildRoutable(
   message: Message,
   ownNumber: string,
   contactNumberOverride?: string,
+  senderNumberOverride?: string,
 ): Promise<RoutableMessage> {
   const fromMe = message.id.fromMe;
-  const isGroup = (message.from ?? '').endsWith('@g.us');
-  const contactNumber = contactNumberOverride || contactNumberOf(message);
   const chatId = (fromMe ? message.to : message.from) ?? '';
+  const isGroup = chatId.endsWith('@g.us');
+  const contactNumber = contactNumberOverride || contactNumberOf(message);
   const body = message.body ?? '';
 
   let senderName: string | undefined;
@@ -63,7 +68,7 @@ export async function buildRoutable(
     messageId: message.id._serialized,
     chatId,
     contactNumber,
-    senderNumber: fromMe ? ownNumber : contactNumber,
+    senderNumber: senderNumberOverride ?? (fromMe ? ownNumber : contactNumber),
     senderName,
     body,
     messageType: String(message.type),

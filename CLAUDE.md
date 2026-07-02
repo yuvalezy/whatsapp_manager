@@ -110,14 +110,20 @@ Key structural conventions:
   API exposes `last4` only). `credentialsService.load()` runs at startup.
 - **Backfill** (`backfill/`): manual-trigger, one run at a time, tracked via in-memory
   status. `fetchMessages` has no native date filter — the date window is applied
-  client-side on `message.timestamp`. History depth is WhatsApp-limited.
+  client-side on `message.timestamp`. History depth is WhatsApp-limited. Covers both
+  **whitelisted contacts** (`backfillNumber`, `POST /backfill/:number`) and **monitored
+  groups** (`backfillGroup`, `POST /backfill/group/:groupId` — group-membership-gated so
+  content is only pulled for opted-in groups; keys the thread by group id with per-author
+  attribution, mirroring live group ingestion). `POST /backfill` (all) does contacts then
+  groups. The Settings → Backfill picker prefixes option values (`c:`/`g:`) so a group id
+  can't collide with a phone number.
 - **Auto catch-up on reconnect:** `catchUpAll()` runs on every `client.on('ready')`
-  (`events.ts`) — no separate "last run" state is stored; it derives each contact's
+  (`events.ts`) — no separate "last run" state is stored; it derives each contact's/group's
   `since` from `MAX(timestamp)` already in `messages` (`messageService.getLastMessageTimestamp`).
-  Closes gaps from downtime (PC off, connection drop) automatically. Contacts with zero
-  captured messages are skipped (that's an initial backfill — manual only). Shares the
-  same in-memory status/one-run-at-a-time guard as manual backfill, so it no-ops instead
-  of racing a manual trigger.
+  Closes gaps from downtime (PC off, connection drop) automatically for both whitelisted
+  contacts and monitored groups. Threads with zero captured messages are skipped (that's an
+  initial backfill — manual only). Shares the same in-memory status/one-run-at-a-time guard
+  as manual backfill, so it no-ops instead of racing a manual trigger.
 - **API cost tracking** (`costs/`): one `api_costs` row per OpenAI transcription call and
   per DeepSeek translation call (translating both body + transcript on one message is two
   rows). Pricing is computed from the `OPENAI_TRANSCRIBE_COST_PER_MINUTE` /
@@ -141,11 +147,23 @@ Key structural conventions:
 
 ### Non-obvious behaviors — don't regress these
 
-- **Privacy invariant:** ignored traffic (non-whitelisted, groups, `status@broadcast`)
-  must never be stored or logged with content. It only bumps in-memory counters in
-  `ignored-stats.ts`, which flush *deltas* to `ignored_stats` every 30s (see the
-  `flushIgnored` timer in `app.ts`). Logging elsewhere is redacted (length/ids only).
-  Storing *outbound* content is scoped to **whitelisted** contacts only.
+- **Privacy invariant:** ignored traffic (non-whitelisted, non-monitored groups,
+  `status@broadcast`) must never be stored or logged with content. It only bumps
+  in-memory counters in `ignored-stats.ts`, which flush *deltas* to `ignored_stats`
+  every 30s (see the `flushIgnored` timer in `app.ts`). Logging elsewhere is redacted
+  (length/ids only). Storing *outbound* content is scoped to **whitelisted** contacts
+  and **monitored groups** only.
+- **Monitored groups (deliberate exception to the above):** a group is captured ONLY
+  when explicitly added to the `groups` registry (`groupService`, mirrors the whitelist
+  `Set`/hot-path pattern — no global `MONITOR_GROUPS` switch; that env flag is retired).
+  Once monitored, **every member's** message is stored (a scoped, opt-in departure from
+  "whitelisted contacts only"), keyed to the group thread by `contact_number = group id`
+  with per-author `sender_number`/`sender_name` (pinned in `events.ts` via `buildRoutable`'s
+  3rd/4th params). Groups link to an EZY Portal business partner **without a contact**
+  (`groups.ezy_contact_*` nullable; `PUT /groups/:id/ezy-link` validates `bpId` only) —
+  unlike the whitelist link, which requires a contact. Managed on the Whitelist page
+  ("Add group conversations" button + Group conversations table); group threads appear
+  in `GET /messages/threads` as `type:'group'` alongside `type:'contact'`.
 - **Whitelist hot path:** `whitelistService` keeps an in-memory `Set` for O(1)
   `isWhitelisted()` checks; the cache is updated in lockstep with every DB mutation
   and loaded once at startup. All numbers are normalized to digits-only via
@@ -158,7 +176,11 @@ Key structural conventions:
   so `/qr` and the REST API stay reachable during login. State transitions arrive via
   events, not the initialize promise.
 - **Outbound is triple-gated:** disabled unless `ENABLE_OUTBOUND=true`, then
-  rate-limited, single-recipient, and recipient-must-be-whitelisted. Keep it that way.
+  rate-limited, single-recipient, and the target must be either a **whitelisted
+  contact** (`{ number }` → `@c.us`) or a **monitored group** (`{ groupId }` →
+  `@g.us`, `groupService.isMonitored` gated). Keep it that way. Draft-reply
+  (`POST /messages/:number/draft-reply`) is gated the same (whitelisted contact OR
+  monitored group).
 - **LID vs. real number on live ingestion (fixed 2026-07-02):** for contacts whose
   chats are privacy-LID-addressed (common — see `GET /contacts` above), `message.from`/
   `message.to` normalize to opaque LID digits that never match the whitelist, so live

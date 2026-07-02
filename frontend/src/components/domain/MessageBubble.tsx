@@ -14,9 +14,11 @@ import type { StoredMessage } from '@/types';
 export interface MessageBubbleProps {
   message: StoredMessage;
   highlighted?: boolean;
+  /** Show the author's name above inbound bubbles (for group threads). */
+  showSender?: boolean;
 }
 
-export function MessageBubble({ message: msg, highlighted = false }: MessageBubbleProps) {
+export function MessageBubble({ message: msg, highlighted = false, showSender = false }: MessageBubbleProps) {
   const isOutbound = msg.direction === 'outbound';
   const hasMediaFile = msg.media_status === 'downloaded';
   const hasBody = !!msg.body?.trim();
@@ -39,6 +41,9 @@ export function MessageBubble({ message: msg, highlighted = false }: MessageBubb
             : 'rounded-[14px] rounded-bl-[4px] border border-line-strong bg-surface-2',
         )}
       >
+        {showSender && !isOutbound && msg.sender_name && (
+          <span className="text-[11.5px] font-semibold text-primary">{msg.sender_name}</span>
+        )}
         {hasMediaFile && <BubbleMedia message={msg} />}
         {hasBody && <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed">{msg.body}</p>}
         {(msg.message_type === 'ptt' || msg.message_type === 'audio') && (

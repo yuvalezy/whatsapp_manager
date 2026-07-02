@@ -3,7 +3,9 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { AddNumberForm } from '@/components/domain/AddNumberForm';
 import { WhitelistTable } from '@/components/domain/WhitelistTable';
+import { GroupsTable } from '@/components/domain/GroupsTable';
 import { ContactPickerModal } from '@/components/domain/ContactPickerModal';
+import { GroupPickerModal } from '@/components/domain/GroupPickerModal';
 import { EzyPortalLinkModal } from '@/components/domain/EzyPortalLinkModal';
 import {
   useWhitelist,
@@ -12,11 +14,18 @@ import {
   useWhatsAppContacts,
   useAddWhitelistBulk,
 } from '@/hooks/useWhitelist';
+import {
+  useGroups,
+  useAvailableGroups,
+  useAddGroupsBulk,
+  useRemoveGroup,
+  useSetGroupEzyLink,
+} from '@/hooks/useGroups';
 import { useSetWhitelistEzyLink } from '@/hooks/useEzyPortal';
 import { useToast } from '@/components/ui/Toast';
 import { formatPhone } from '@/lib/format';
 import { ApiError } from '@/lib/api';
-import type { WhitelistEntry } from '@/types';
+import type { GroupEntry, WhitelistEntry } from '@/types';
 
 export function WhitelistPage() {
   const { data: whitelist, isLoading } = useWhitelist();
@@ -32,12 +41,27 @@ export function WhitelistPage() {
   const [linkingEntry, setLinkingEntry] = useState<WhitelistEntry | null>(null);
   const setEzyLink = useSetWhitelistEzyLink();
 
+  // Groups
+  const { data: groups, isLoading: groupsLoading } = useGroups();
+  const [groupPickerOpen, setGroupPickerOpen] = useState(false);
+  const availableGroups = useAvailableGroups(groupPickerOpen);
+  const addGroups = useAddGroupsBulk();
+  const removeGroup = useRemoveGroup();
+  const [removingGroupId, setRemovingGroupId] = useState<string | number | null>(null);
+  const [linkingGroup, setLinkingGroup] = useState<GroupEntry | null>(null);
+  const setGroupEzyLink = useSetGroupEzyLink();
+
   return (
     <>
       <PageHeader
         title="Whitelist"
-        subtitle="Only inbound messages from these numbers are ever captured. Everything else is counted and dropped."
-        actions={<Button variant="secondary" icon="users" label="Browse contacts" onClick={() => setPickerOpen(true)} />}
+        subtitle="Only messages from whitelisted numbers and monitored groups are ever captured. Everything else is counted and dropped."
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" icon="users" label="Browse contacts" onClick={() => setPickerOpen(true)} />
+            <Button variant="secondary" icon="plus" label="Add group conversations" onClick={() => setGroupPickerOpen(true)} />
+          </div>
+        }
       />
       <div className="flex flex-col gap-[22px] p-7">
         <AddNumberForm
@@ -83,6 +107,34 @@ export function WhitelistPage() {
           }}
           onLink={(row) => setLinkingEntry(row)}
         />
+
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-0.5">
+            <h2 className="text-[15px] font-semibold text-fg">Group conversations</h2>
+            <p className="text-[12.5px] text-fg-muted">
+              Monitored groups capture every member's messages. Assign a group to a business partner (no contact needed).
+            </p>
+          </div>
+          <GroupsTable
+            rows={groups ?? []}
+            loading={groupsLoading}
+            deletingId={removingGroupId}
+            onDelete={(groupId) => {
+              setRemovingGroupId(groupId);
+              removeGroup.mutate(groupId, {
+                onSuccess: () => toast({ tone: 'success', title: 'Group removed' }),
+                onError: (e) =>
+                  toast({
+                    tone: 'danger',
+                    title: 'Could not remove group',
+                    description: e instanceof Error ? e.message : 'Please try again.',
+                  }),
+                onSettled: () => setRemovingGroupId(null),
+              });
+            }}
+            onLink={(row) => setLinkingGroup(row)}
+          />
+        </div>
       </div>
 
       <ContactPickerModal
@@ -122,6 +174,43 @@ export function WhitelistPage() {
         }}
       />
 
+      <GroupPickerModal
+        open={groupPickerOpen}
+        groups={availableGroups.data ?? []}
+        loading={availableGroups.isLoading}
+        error={
+          availableGroups.isError
+            ? availableGroups.error instanceof ApiError
+              ? availableGroups.error.message
+              : 'Could not load WhatsApp groups. Please try again.'
+            : null
+        }
+        submitting={addGroups.isPending}
+        onClose={() => setGroupPickerOpen(false)}
+        onAdd={(entries) => {
+          if (entries.length === 0) {
+            setGroupPickerOpen(false);
+            return;
+          }
+          addGroups.mutate(entries, {
+            onSuccess: (result) => {
+              toast({
+                tone: result.failed > 0 ? 'warning' : 'success',
+                title: `${result.succeeded} group${result.succeeded === 1 ? '' : 's'} monitored`,
+                description: result.failed > 0 ? `${result.failed} failed — try again for those.` : undefined,
+              });
+              setGroupPickerOpen(false);
+            },
+            onError: (e) =>
+              toast({
+                tone: 'danger',
+                title: 'Could not add groups',
+                description: e instanceof Error ? e.message : 'Please try again.',
+              }),
+          });
+        }}
+      />
+
       <EzyPortalLinkModal
         open={linkingEntry != null}
         entry={linkingEntry}
@@ -139,6 +228,30 @@ export function WhitelistPage() {
               onSuccess: () => {
                 toast({ tone: 'success', title: 'Linked to EZY Portal', description: `${link.bpName} · ${link.contactName}` });
                 setLinkingEntry(null);
+              },
+            },
+          );
+        }}
+      />
+
+      <EzyPortalLinkModal
+        open={linkingGroup != null}
+        group={linkingGroup}
+        requireContact={false}
+        submitting={setGroupEzyLink.isPending}
+        error={setGroupEzyLink.isError ? (setGroupEzyLink.error instanceof Error ? setGroupEzyLink.error.message : 'Could not save link. Please try again.') : null}
+        onClose={() => {
+          setLinkingGroup(null);
+          setGroupEzyLink.reset();
+        }}
+        onSave={(link) => {
+          if (!linkingGroup) return;
+          setGroupEzyLink.mutate(
+            { id: linkingGroup.id, link: { bpId: link.bpId, bpCode: link.bpCode, bpName: link.bpName } },
+            {
+              onSuccess: () => {
+                toast({ tone: 'success', title: 'Group linked to business partner', description: link.bpName });
+                setLinkingGroup(null);
               },
             },
           );

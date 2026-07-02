@@ -15,8 +15,11 @@ export function useDraftReply() {
 
 export function useSendMessage() {
   const qc = useQueryClient();
-  return useMutation<{ messageId: string }, Error, { number: string; message: string }>({
-    mutationFn: ({ number, message }) => api.sendMessage(number, message),
+  // `number` is the thread id (contact number or group id); `isGroup` picks the
+  // group send path. Invalidation keys on the same id either way.
+  return useMutation<{ messageId: string }, Error, { number: string; message: string; isGroup?: boolean }>({
+    mutationFn: ({ number, message, isGroup }) =>
+      isGroup ? api.sendGroupMessage(number, message) : api.sendMessage(number, message),
     onSuccess: (_data, variables) => {
       const normalized = normalizeNumber(variables.number);
       void qc.invalidateQueries({ queryKey: ['messages', 'by-number', normalized] });

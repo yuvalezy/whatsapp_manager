@@ -4,16 +4,17 @@ import { env } from '../config/env';
 import { logger } from '../logger';
 import { whatsappService } from '../whatsapp/client';
 import { whitelistService } from '../whitelist/whitelist.service';
+import { groupService } from '../groups/group.service';
 import { messageService } from '../messages/message.service';
 import { buildRoutable } from '../whatsapp/message-mapper';
-import { normalizeNumber, toChatId } from '../utils/phone';
+import { normalizeNumber, toChatId, toGroupChatId } from '../utils/phone';
 
 /**
  * Outbound is a SAFE SCAFFOLD ONLY — disabled by default (ENABLE_OUTBOUND=false).
  * Even when enabled it is deliberately constrained:
  *   • rate limited
  *   • single recipient per call (no bulk)
- *   • recipient must be whitelisted
+ *   • recipient must be whitelisted (contact) or a monitored group
  * This exists so a future MessageRouter can reply without re-plumbing safety.
  */
 export const outboundRouter = Router();
@@ -37,19 +38,37 @@ outboundRouter.use((_req, res, next) => {
   next();
 });
 
-// POST /outbound/send — { number, message }
+// POST /outbound/send — { number, message } for a whitelisted contact, OR
+// { groupId, message } for a monitored group. Exactly one target.
 outboundRouter.post('/send', limiter, async (req, res, next) => {
   try {
-    const { number, message } = (req.body ?? {}) as { number?: unknown; message?: unknown };
-    if (!number || !message) {
-      res.status(400).json({ error: '"number" and "message" are required' });
+    const { number, message, groupId } = (req.body ?? {}) as {
+      number?: unknown;
+      message?: unknown;
+      groupId?: unknown;
+    };
+    if (!message || (!number && !groupId)) {
+      res.status(400).json({ error: '"message" and one of "number" / "groupId" are required' });
       return;
     }
 
-    const phone = normalizeNumber(String(number));
-    if (!whitelistService.isWhitelisted(phone)) {
-      res.status(403).json({ error: 'Recipient is not whitelisted' });
-      return;
+    // Resolve the target (gate + chat id + thread key) up front.
+    let chatId: string;
+    let threadKey: string;
+    if (groupId) {
+      threadKey = normalizeNumber(String(groupId));
+      if (!groupService.isMonitored(threadKey)) {
+        res.status(403).json({ error: 'Group is not monitored' });
+        return;
+      }
+      chatId = toGroupChatId(threadKey);
+    } else {
+      threadKey = normalizeNumber(String(number));
+      if (!whitelistService.isWhitelisted(threadKey)) {
+        res.status(403).json({ error: 'Recipient is not whitelisted' });
+        return;
+      }
+      chatId = toChatId(threadKey);
     }
 
     const client = whatsappService.getClient();
@@ -58,12 +77,12 @@ outboundRouter.post('/send', limiter, async (req, res, next) => {
       return;
     }
 
-    const sent = await client.sendMessage(toChatId(phone), String(message));
-    logger.warn({ to: phone, messageId: sent.id._serialized }, 'OUTBOUND message sent');
+    const sent = await client.sendMessage(chatId, String(message));
+    logger.warn({ to: threadKey, messageId: sent.id._serialized }, 'OUTBOUND message sent');
 
     // Pin the thread key: `sent.to` can come back LID-addressed even when we
-    // sent to the @c.us chat id, and the recipient number is already known.
-    const routable = await buildRoutable(sent, whatsappService.getOwnNumber(), phone);
+    // sent to the @c.us/@g.us chat id, and the target is already known.
+    const routable = await buildRoutable(sent, whatsappService.getOwnNumber(), threadKey);
     await messageService.save(routable).catch((err) =>
       logger.error({ err, messageId: sent.id._serialized }, 'Failed to persist own outbound message'),
     );

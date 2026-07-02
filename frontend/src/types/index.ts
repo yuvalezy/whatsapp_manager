@@ -34,6 +34,7 @@ export interface StatusData {
   whitelistCount: number;
   outboundEnabled: boolean;
   monitorGroups: boolean;
+  monitoredGroupCount?: number;
   ignored: Record<IgnoredReason, number>;
   ignoredTotal: number;
   transcriptionEnabled?: boolean;
@@ -116,6 +117,38 @@ export interface WhatsAppContact {
   whitelisted: boolean;
 }
 
+// A monitored WhatsApp group. Links to an EZY Portal business partner WITHOUT a
+// contact, so the ezy_contact_* fields are always null (kept for parity).
+export interface GroupEntry {
+  id: string | number;
+  group_id: string;
+  chat_id: string;
+  subject: string | null;
+  created_at: string;
+  ezy_bp_id?: string | null;
+  ezy_bp_code?: string | null;
+  ezy_bp_name?: string | null;
+  ezy_contact_id?: string | null;
+  ezy_contact_name?: string | null;
+  ezy_linked_at?: string | null;
+}
+
+// A real WhatsApp group from the linked account, for the "add group conversations" picker.
+export interface AvailableGroup {
+  groupId: string;
+  chatId: string;
+  subject: string;
+  lastActivity: string | null;
+  monitored: boolean;
+}
+
+// Group → business partner link (BP only — no contact).
+export interface GroupEzyLinkInput {
+  bpId: string;
+  bpCode: string;
+  bpName: string;
+}
+
 export type MediaStatus = 'none' | 'pending' | 'downloaded' | 'failed' | 'expired';
 export type TranscriptionStatus = 'none' | 'pending' | 'done' | 'failed';
 export type TranslationStatus = 'none' | 'pending' | 'done' | 'failed' | 'skipped';
@@ -162,8 +195,13 @@ export interface CredentialsList {
 }
 
 export interface ConversationThread {
-  phone_number: string;
+  /** 'contact' = 1:1 whitelisted number, 'group' = monitored group. */
+  type: 'contact' | 'group';
+  /** Thread key — phone_number for contacts, group_id for groups. What GET /messages/:number expects. */
+  id: string;
   label: string | null;
+  /** Assigned EZY Portal business partner name, if any. */
+  bp?: string | null;
   lastMessage: StoredMessage | null;
 }
 

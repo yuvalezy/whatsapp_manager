@@ -21,3 +21,8 @@ export function isValidNumber(input: string): boolean {
 export function toChatId(number: string): string {
   return `${normalizeNumber(number)}@c.us`;
 }
+
+/** Build the WhatsApp group chat id for a normalized group id. */
+export function toGroupChatId(groupId: string): string {
+  return `${normalizeNumber(groupId)}@g.us`;
+}

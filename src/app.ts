@@ -6,6 +6,8 @@ import { runMigrations } from './db/migrate';
 import { closePool } from './db';
 import { whitelistService } from './whitelist/whitelist.service';
 import { whitelistRouter } from './whitelist/whitelist.routes';
+import { groupService } from './groups/group.service';
+import { groupsRouter } from './groups/group.routes';
 import { messagesRouter } from './messages/message.routes';
 import { whatsappRouter } from './whatsapp/whatsapp.routes';
 import { outboundRouter } from './outbound/outbound.routes';
@@ -61,6 +63,11 @@ function buildApp() {
         'GET /whitelist',
         'POST /whitelist',
         'DELETE /whitelist/:number',
+        'GET /groups',
+        'GET /groups/available',
+        'POST /groups',
+        'PUT /groups/:id/ezy-link',
+        'DELETE /groups/:groupId',
         'GET /messages',
         'GET /messages/threads',
         'GET /messages/:number',
@@ -69,6 +76,7 @@ function buildApp() {
         'GET /messages/:id/media',
         'POST /backfill',
         'POST /backfill/:number',
+        'POST /backfill/group/:groupId',
         'GET /backfill/status',
         'GET /credentials',
         'PUT /credentials/:name',
@@ -82,6 +90,7 @@ function buildApp() {
 
   app.use('/', whatsappRouter); // /qr, /status
   app.use('/whitelist', whitelistRouter);
+  app.use('/groups', groupsRouter);
   app.use('/messages', messagesRouter);
   app.use('/outbound', outboundRouter);
   app.use('/credentials', credentialsRouter);
@@ -129,6 +138,7 @@ async function flushIgnored(): Promise<void> {
 async function main(): Promise<void> {
   await runMigrations();
   await whitelistService.load();
+  await groupService.load();
   await credentialsService.load();
 
   const app = buildApp();

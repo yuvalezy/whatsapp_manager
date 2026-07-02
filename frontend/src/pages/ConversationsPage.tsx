@@ -35,10 +35,10 @@ export function ConversationsPage() {
   const { data: status } = useStatus();
   const outboundEnabled = status?.outboundEnabled ?? false;
 
-  // Default to the most-recent conversation if no number is selected.
+  // Default to the most-recent conversation if none is selected.
   useEffect(() => {
     if (!selected && threads && threads.length > 0) {
-      setSearchParams({ number: threads[0].phone_number });
+      setSearchParams({ number: threads[0].id });
     }
   }, [selected, threads, setSearchParams]);
 
@@ -71,8 +71,11 @@ export function ConversationsPage() {
     (m) => m.translation_status !== 'done' && !!(m.body?.trim() || m.transcript?.trim()),
   ).length;
 
-  const selectedThread = threads?.find((t) => t.phone_number === selected);
-  const name = selectedThread ? selectedThread.label || formatPhone(selectedThread.phone_number) : '';
+  const selectedThread = threads?.find((t) => t.id === selected);
+  const isGroup = selectedThread?.type === 'group';
+  const name = selectedThread
+    ? selectedThread.label || (isGroup ? selectedThread.id : formatPhone(selectedThread.id))
+    : '';
 
   const onTranslateAll = () => {
     if (!selected) return;
@@ -94,7 +97,7 @@ export function ConversationsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageHeader title="Conversations" subtitle="Full two-sided threads for whitelisted contacts." />
+      <PageHeader title="Conversations" subtitle="Full threads for whitelisted contacts and monitored groups." />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="flex w-[300px] shrink-0 flex-col overflow-y-auto border-r border-line-strong bg-surface">
           <ConversationList
@@ -113,7 +116,7 @@ export function ConversationsPage() {
             <EmptyState
               icon="messageSquare"
               title="No conversation selected"
-              description="Pick a contact from the list."
+              description="Pick a conversation from the list."
             />
           ) : (
             <>
@@ -121,8 +124,15 @@ export function ConversationsPage() {
                 <div className="flex items-center gap-2.5">
                   <Avatar personName={name} size="sm" />
                   <div className="flex flex-col">
-                    <span className="text-[14px] font-bold text-fg">{name}</span>
-                    <PhoneNumber value={selected} fontSize="11.5px" />
+                    <span className="flex items-center gap-1.5 text-[14px] font-bold text-fg">
+                      {isGroup && <Icon name="users" size={14} className="shrink-0 text-fg-muted" />}
+                      {name}
+                    </span>
+                    {isGroup ? (
+                      <span className="text-[11.5px] text-fg-muted">{selectedThread?.bp || 'Group'}</span>
+                    ) : (
+                      <PhoneNumber value={selected} fontSize="11.5px" />
+                    )}
                   </div>
                 </div>
                 <Button
@@ -148,7 +158,12 @@ export function ConversationsPage() {
                 ) : (
                   <div className="flex flex-col gap-2.5">
                     {ordered.map((m) => (
-                      <MessageBubble key={m.id} message={m} highlighted={highlightedIds.has(m.id)} />
+                      <MessageBubble
+                        key={m.id}
+                        message={m}
+                        highlighted={highlightedIds.has(m.id)}
+                        showSender={isGroup}
+                      />
                     ))}
                     <div ref={bottomRef} />
                   </div>
@@ -158,6 +173,7 @@ export function ConversationsPage() {
               {outboundEnabled ? (
                 <ComposeReply
                   contactNumber={selected}
+                  isGroup={isGroup}
                   messageCount={messageCount}
                   onMessageCountChange={setMessageCount}
                   composeState={composeState}

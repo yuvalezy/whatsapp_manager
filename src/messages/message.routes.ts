@@ -6,6 +6,7 @@ import { translationService } from '../enrichment/translation.service';
 import { draftReplyService } from '../enrichment/draft-reply.service';
 import { absoluteMediaPath } from '../media/media.service';
 import { whitelistService } from '../whitelist/whitelist.service';
+import { groupService } from '../groups/group.service';
 import { costService } from '../costs/cost.service';
 import { logger } from '../logger';
 
@@ -27,26 +28,43 @@ messagesRouter.get('/', async (req, res, next) => {
   }
 });
 
-// GET /messages/threads — one row per whitelisted contact (their latest message),
-// sorted by recency, for the Conversations inbox view.
+// GET /messages/threads — one row per monitored conversation (whitelisted
+// contacts + monitored groups), each with its latest message, sorted by
+// recency, for the Conversations inbox view. `id` is the thread key
+// (phone_number for contacts, group_id for groups) and is what GET
+// /messages/:number expects.
 messagesRouter.get('/threads', async (_req, res, next) => {
   try {
-    const [contacts, latest] = await Promise.all([whitelistService.list(), messageService.listThreads()]);
+    const [contacts, groups, latest] = await Promise.all([
+      whitelistService.list(),
+      groupService.list(),
+      messageService.listThreads(),
+    ]);
     const byNumber = new Map(latest.map((m) => [m.contact_number, m]));
-    const threads = contacts
-      .map((c) => ({
-        phone_number: c.phone_number,
-        label: c.label,
-        lastMessage: byNumber.get(c.phone_number) ?? null,
-      }))
-      .sort((a, b) => {
-        const at = a.lastMessage?.timestamp;
-        const bt = b.lastMessage?.timestamp;
-        if (at && bt) return new Date(bt).getTime() - new Date(at).getTime();
-        if (at) return -1;
-        if (bt) return 1;
-        return (a.label ?? a.phone_number).localeCompare(b.label ?? b.phone_number);
-      });
+
+    const contactThreads = contacts.map((c) => ({
+      type: 'contact' as const,
+      id: c.phone_number,
+      label: c.label,
+      bp: c.ezy_bp_name ?? null,
+      lastMessage: byNumber.get(c.phone_number) ?? null,
+    }));
+    const groupThreads = groups.map((g) => ({
+      type: 'group' as const,
+      id: g.group_id,
+      label: g.subject,
+      bp: g.ezy_bp_name ?? null,
+      lastMessage: byNumber.get(g.group_id) ?? null,
+    }));
+
+    const threads = [...contactThreads, ...groupThreads].sort((a, b) => {
+      const at = a.lastMessage?.timestamp;
+      const bt = b.lastMessage?.timestamp;
+      if (at && bt) return new Date(bt).getTime() - new Date(at).getTime();
+      if (at) return -1;
+      if (bt) return 1;
+      return (a.label ?? a.id).localeCompare(b.label ?? b.id);
+    });
     res.json({ data: threads });
   } catch (err) {
     next(err);
@@ -173,8 +191,8 @@ messagesRouter.post('/:number/draft-reply', async (req, res, next) => {
       res.status(503).json({ error: 'Draft reply is unavailable — configure a DeepSeek API key.' });
       return;
     }
-    if (!whitelistService.isWhitelisted(number)) {
-      res.status(403).json({ error: 'Contact is not whitelisted' });
+    if (!whitelistService.isWhitelisted(number) && !groupService.isMonitored(number)) {
+      res.status(403).json({ error: 'Not a whitelisted contact or monitored group' });
       return;
     }
 

@@ -8,6 +8,8 @@ import { useDraftReply, useSendMessage } from '@/hooks/useDraftReply';
 
 export interface ComposeReplyProps {
   contactNumber: string;
+  /** Target is a monitored group (routes the send to the group chat). */
+  isGroup?: boolean;
   messageCount: number;
   onMessageCountChange: (count: number) => void;
   composeState: ComposeState;
@@ -18,6 +20,7 @@ const LANGUAGE_LABELS: Record<string, string> = { es: 'Spanish', en: 'English', 
 
 export function ComposeReply({
   contactNumber,
+  isGroup = false,
   messageCount,
   onMessageCountChange,
   composeState,
@@ -61,7 +64,7 @@ export function ComposeReply({
     setSendingWhich(which);
     onComposeStateChange('sending');
     sendMessage.mutate(
-      { number: contactNumber, message: messageToSend },
+      { number: contactNumber, message: messageToSend, isGroup },
       {
         onSuccess: () => {
           toast({ tone: 'success', title: 'Message sent' });

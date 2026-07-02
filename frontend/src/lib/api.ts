@@ -20,6 +20,9 @@ import type {
   EzyBusinessPartner,
   EzyContact,
   EzyLinkInput,
+  AvailableGroup,
+  GroupEntry,
+  GroupEzyLinkInput,
   HealthData,
   QrData,
   StatusData,
@@ -117,6 +120,24 @@ export const api = {
   // Real WhatsApp contacts from the linked account (for the "browse contacts" picker).
   listContacts: () => request<WhatsAppContact[]>('/contacts'),
 
+  // Monitored groups + the "add group conversations" picker + BP-only linking.
+  listGroups: () => request<GroupEntry[]>('/groups'),
+  listAvailableGroups: () => request<AvailableGroup[]>('/groups/available'),
+  addGroup: (groupId: string, chatId: string, subject?: string) =>
+    request<GroupEntry>('/groups', {
+      method: 'POST',
+      body: JSON.stringify({ groupId, chatId, subject }),
+    }),
+  removeGroup: (groupId: string) =>
+    request<{ removed: boolean }>(`/groups/${encodeURIComponent(groupId)}`, {
+      method: 'DELETE',
+    }),
+  setGroupEzyLink: (id: string | number, link: GroupEzyLinkInput) =>
+    request<GroupEntry>(`/groups/${encodeURIComponent(String(id))}/ezy-link`, {
+      method: 'PUT',
+      body: JSON.stringify(link),
+    }),
+
   listMessages: (params?: { limit?: number; offset?: number }) => {
     const q = new URLSearchParams();
     if (params?.limit != null) q.set('limit', String(params.limit));
@@ -167,6 +188,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(window ?? {}),
     }),
+  runBackfillGroup: (groupId: string, window?: { from?: string; to?: string }) =>
+    request<BackfillStatus>(`/backfill/group/${encodeURIComponent(groupId)}`, {
+      method: 'POST',
+      body: JSON.stringify(window ?? {}),
+    }),
   backfillStatus: () => request<BackfillStatus>('/backfill/status'),
 
   // Encrypted credentials store (values are never returned — only last4).
@@ -193,10 +219,16 @@ export const api = {
       body: JSON.stringify({ draft, messageCount }),
     }),
 
-  // Outbound send (gated by ENABLE_OUTBOUND, rate-limited, whitelist-only).
+  // Outbound send (gated by ENABLE_OUTBOUND, rate-limited). Contact must be
+  // whitelisted; group must be monitored.
   sendMessage: (number: string, message: string) =>
     request<{ messageId: string }>('/outbound/send', {
       method: 'POST',
       body: JSON.stringify({ number, message }),
+    }),
+  sendGroupMessage: (groupId: string, message: string) =>
+    request<{ messageId: string }>('/outbound/send', {
+      method: 'POST',
+      body: JSON.stringify({ groupId, message }),
     }),
 };

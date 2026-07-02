@@ -3,10 +3,12 @@ import { env } from '../config/env';
 import { logger } from '../logger';
 import { printQrToTerminal } from './qr';
 import { whitelistService } from '../whitelist/whitelist.service';
+import { groupService } from '../groups/group.service';
 import { ignoredStats } from '../messages/ignored-stats';
 import { MessageRouter } from '../router/message-router';
 import { buildRoutable, contactJidOf } from './message-mapper';
 import { resolveContactNumber } from './lid-resolver';
+import { normalizeNumber } from '../utils/phone';
 import { backfillService } from '../backfill/backfill.service';
 import { sseManager } from '../sse';
 import { buildStatusData } from '../whatsapp/whatsapp.routes';
@@ -83,9 +85,13 @@ export function registerEvents(
 }
 
 /**
- * Core policy: process ONLY 1:1 messages whose contact is whitelisted, in either
- * direction. Everything else is counted (never stored/logged with content) and
- * dropped. Our own outbound to non-whitelisted contacts is dropped silently.
+ * Core policy, in either direction:
+ *  - 1:1 messages are processed only when the contact is whitelisted.
+ *  - Group messages are processed only when the group is in the monitored-group
+ *    registry (explicit opt-in — no global switch); then EVERY member's message
+ *    is stored, keyed to the group thread with per-author attribution.
+ * Everything else is counted (never stored/logged with content) and dropped.
+ * Our own outbound to non-monitored targets is dropped silently.
  */
 async function handleMessage(
   service: WhatsAppService,
@@ -95,19 +101,36 @@ async function handleMessage(
 ): Promise<void> {
   const fromMe = message.id.fromMe;
   const from = message.from ?? '';
-  const isGroup = from.endsWith('@g.us');
+  const to = message.to ?? '';
+  // The conversation this message belongs to (the group jid for group messages,
+  // the other party for 1:1) — direction-aware so our own outbound is keyed to
+  // the same thread as inbound.
+  const chatJid = fromMe ? to : from;
+  const isGroup = chatJid.endsWith('@g.us');
 
-  if (from === 'status@broadcast' || message.to === 'status@broadcast') {
+  if (from === 'status@broadcast' || to === 'status@broadcast') {
     if (!fromMe) ignoredStats.increment('status_broadcast');
     return;
   }
-  if (isGroup && !env.MONITOR_GROUPS) {
-    if (!fromMe) ignoredStats.increment('group');
+
+  if (isGroup) {
+    const groupId = normalizeNumber(chatJid);
+    if (!groupService.isMonitored(groupId)) {
+      if (!fromMe) ignoredStats.increment('group');
+      return;
+    }
+    // Pin the group id as the thread key; resolve the real author for
+    // per-message attribution (sender_number/sender_name).
+    const authorNumber = fromMe
+      ? service.getOwnNumber()
+      : await resolveContactNumber(client, message.author ?? from);
+    const routable = await buildRoutable(message, service.getOwnNumber(), groupId, authorNumber);
+    await router.route(routable);
     return;
   }
 
-  // LID-addressed chats normalize to opaque digits that never match the
-  // whitelist — resolve to the real phone number BEFORE the policy check.
+  // 1:1 path. LID-addressed chats normalize to opaque digits that never match
+  // the whitelist — resolve to the real phone number BEFORE the policy check.
   const contactNumber = await resolveContactNumber(client, contactJidOf(message));
   if (!whitelistService.isWhitelisted(contactNumber)) {
     // Count inbound noise; drop our own outbound to non-whitelisted silently.
