@@ -20,13 +20,14 @@ export interface WhitelistTableProps {
   loading?: boolean;
   deletingId?: string | number | null;
   onDelete?: (id: string | number) => void;
+  onLink?: (row: WhitelistEntry) => void;
   className?: string;
 }
 
 const TH = 'bg-surface-2 border-b border-line-strong px-4 py-[11px] text-left text-[11.5px] font-bold uppercase tracking-[0.04em] text-fg-secondary';
 const TD = 'px-4 py-3 text-[13.5px] text-fg';
 
-export function WhitelistTable({ rows = [], loading = false, deletingId, onDelete, className }: WhitelistTableProps) {
+export function WhitelistTable({ rows = [], loading = false, deletingId, onDelete, onLink, className }: WhitelistTableProps) {
   const [pending, setPending] = useState<WhitelistEntry | null>(null);
 
   if (loading) {
@@ -59,8 +60,9 @@ export function WhitelistTable({ rows = [], loading = false, deletingId, onDelet
             <tr>
               <th className={TH}>Number</th>
               <th className={TH}>Label</th>
+              <th className={TH}>EZY Portal</th>
               <th className={TH}>Added</th>
-              <th className={cn(TH, 'w-12')} aria-label="Actions" />
+              <th className={cn(TH, 'w-20')} aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
@@ -74,17 +76,38 @@ export function WhitelistTable({ rows = [], loading = false, deletingId, onDelet
                 </td>
                 <td className={TD}>{row.label || '—'}</td>
                 <td className={TD}>
+                  {row.ezy_bp_name ? (
+                    <span className="flex flex-col">
+                      <span className="truncate font-medium text-fg">{row.ezy_bp_name}</span>
+                      {row.ezy_contact_name && (
+                        <span className="truncate text-[11.5px] text-fg-muted">{row.ezy_contact_name}</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-fg-muted">Not linked</span>
+                  )}
+                </td>
+                <td className={TD}>
                   <RelativeTime timestamp={row.created_at} />
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <IconButton
-                    icon="trash"
-                    size="sm"
-                    variant="ghost"
-                    ariaLabel={`Remove ${formatPhone(row.phone_number)}`}
-                    loading={deletingId != null && deletingId === row.id}
-                    onClick={() => setPending(row)}
-                  />
+                  <div className="flex items-center justify-end gap-1">
+                    <IconButton
+                      icon="link"
+                      size="sm"
+                      variant="ghost"
+                      ariaLabel={`Link ${formatPhone(row.phone_number)} to EZY Portal`}
+                      onClick={() => onLink?.(row)}
+                    />
+                    <IconButton
+                      icon="trash"
+                      size="sm"
+                      variant="ghost"
+                      ariaLabel={`Remove ${formatPhone(row.phone_number)}`}
+                      loading={deletingId != null && deletingId === row.id}
+                      onClick={() => setPending(row)}
+                    />
+                  </div>
                 </td>
               </tr>
             ))}

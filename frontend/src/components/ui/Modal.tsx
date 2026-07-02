@@ -25,6 +25,7 @@ export interface ModalProps {
   size?: ModalSize;
   primaryLabel?: string;
   primaryVariant?: Extract<ButtonVariant, 'primary' | 'danger'>;
+  primaryDisabled?: boolean;
   secondaryLabel?: string | null;
   loading?: boolean;
   /** Hide the default footer entirely (e.g. when using custom children with own actions). */
@@ -56,6 +57,7 @@ export function Modal({
   size = 'md',
   primaryLabel,
   primaryVariant = 'primary',
+  primaryDisabled = false,
   secondaryLabel = 'Cancel',
   loading = false,
   hideFooter = false,
@@ -127,6 +129,7 @@ export function Modal({
                 variant={primaryVariant}
                 label={primaryLabel}
                 loading={loading}
+                disabled={primaryDisabled}
                 onClick={onPrimary}
               />
             )}

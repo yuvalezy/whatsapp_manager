@@ -7,7 +7,24 @@ export interface WhitelistEntry {
   phone_number: string;
   label: string | null;
   created_at: string;
+  ezy_bp_id: string | null;
+  ezy_bp_code: string | null;
+  ezy_bp_name: string | null;
+  ezy_contact_id: string | null;
+  ezy_contact_name: string | null;
+  ezy_linked_at: string | null;
 }
+
+export interface EzyLinkInput {
+  bpId: string;
+  bpCode: string;
+  bpName: string;
+  contactId: string;
+  contactName: string;
+}
+
+const ENTRY_COLUMNS =
+  'id, phone_number, label, created_at, ezy_bp_id, ezy_bp_code, ezy_bp_name, ezy_contact_id, ezy_contact_name, ezy_linked_at';
 
 export class ValidationError extends Error {}
 
@@ -38,7 +55,7 @@ class WhitelistService {
 
   async list(): Promise<WhitelistEntry[]> {
     const { rows } = await query<WhitelistEntry>(
-      'SELECT id, phone_number, label, created_at FROM whitelist ORDER BY created_at DESC',
+      `SELECT ${ENTRY_COLUMNS} FROM whitelist ORDER BY created_at DESC`,
     );
     return rows;
   }
@@ -54,12 +71,26 @@ class WhitelistService {
       `INSERT INTO whitelist (phone_number, label)
        VALUES ($1, $2)
        ON CONFLICT (phone_number) DO UPDATE SET label = EXCLUDED.label
-       RETURNING id, phone_number, label, created_at`,
+       RETURNING ${ENTRY_COLUMNS}`,
       [phone, label ?? null],
     );
     this.cache.add(phone);
     logger.info({ phone }, 'Whitelist entry added');
     return rows[0];
+  }
+
+  /** Link (or replace the link on) a whitelist entry to an EZY Portal BP + contact. */
+  async setEzyLink(id: number, link: EzyLinkInput): Promise<WhitelistEntry | null> {
+    const { rows } = await query<WhitelistEntry>(
+      `UPDATE whitelist
+          SET ezy_bp_id = $2, ezy_bp_code = $3, ezy_bp_name = $4,
+              ezy_contact_id = $5, ezy_contact_name = $6, ezy_linked_at = now()
+        WHERE id = $1
+        RETURNING ${ENTRY_COLUMNS}`,
+      [id, link.bpId, link.bpCode, link.bpName, link.contactId, link.contactName],
+    );
+    if (rows[0]) logger.info({ id, bpId: link.bpId, contactId: link.contactId }, 'Whitelist entry linked to EZY Portal');
+    return rows[0] ?? null;
   }
 
   async remove(rawNumber: string): Promise<boolean> {

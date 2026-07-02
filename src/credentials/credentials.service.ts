@@ -112,3 +112,7 @@ export function resolveOpenAiKey(): string | undefined {
 export function resolveDeepseekKey(): string | undefined {
   return credentialsService.get('deepseek') ?? (env.DEEPSEEK_API_KEY || undefined);
 }
+
+export function resolveEzyPortalKey(): string | undefined {
+  return credentialsService.get('ezy_portal');
+}

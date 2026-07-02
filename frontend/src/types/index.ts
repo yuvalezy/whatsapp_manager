@@ -58,6 +58,52 @@ export interface WhitelistEntry {
   phone_number: string;
   label: string | null;
   created_at: string;
+  ezy_bp_id?: string | null;
+  ezy_bp_code?: string | null;
+  ezy_bp_name?: string | null;
+  ezy_contact_id?: string | null;
+  ezy_contact_name?: string | null;
+  ezy_linked_at?: string | null;
+}
+
+export interface EzyBusinessPartner {
+  id: string;
+  code: string;
+  name: string;
+  legalName?: string | null;
+  status: string;
+  roles: string[];
+}
+
+export interface EzyContact {
+  id: string;
+  bpId: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  isPrimary: boolean;
+  email?: string | null;
+  mobile?: string | null;
+  whatsapp?: string | null;
+  jobTitle?: string | null;
+}
+
+export interface CreateEzyContactInput {
+  firstName: string;
+  lastName: string;
+  role?: string;
+  email?: string;
+  mobile?: string;
+  whatsapp?: string;
+  jobTitle?: string;
+}
+
+export interface EzyLinkInput {
+  bpId: string;
+  bpCode: string;
+  bpName: string;
+  contactId: string;
+  contactName: string;
 }
 
 export interface WhatsAppContact {

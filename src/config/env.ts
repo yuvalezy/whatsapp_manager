@@ -62,6 +62,9 @@ const envSchema = z.object({
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPSEEK_BASE_URL: z.string().default('https://api.deepseek.com'),
 
+  // ── EZY Portal (tenant API key lives in the encrypted store) ──
+  EZY_PORTAL_BASE_URL: z.string().default('https://account.ezyts.com'),
+
   // Models. TRANSLATION_MODEL is the exact DeepSeek API model string.
   // deepseek-chat is deprecated 2026-07-24 (no grace period); deepseek-v4-flash
   // is its direct non-thinking-mode replacement, same cost tier.

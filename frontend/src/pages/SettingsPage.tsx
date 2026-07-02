@@ -55,6 +55,7 @@ export function SettingsPage() {
 const PROVIDER_OPTIONS = [
   { value: 'openai', label: 'OpenAI (transcription)' },
   { value: 'deepseek', label: 'DeepSeek (translation)' },
+  { value: 'ezy_portal', label: 'EZY Portal (tenant API key)' },
   { value: 'custom', label: 'Custom…' },
 ];
 

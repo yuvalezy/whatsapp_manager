@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { AddNumberForm } from '@/components/domain/AddNumberForm';
 import { WhitelistTable } from '@/components/domain/WhitelistTable';
 import { ContactPickerModal } from '@/components/domain/ContactPickerModal';
+import { EzyPortalLinkModal } from '@/components/domain/EzyPortalLinkModal';
 import {
   useWhitelist,
   useAddWhitelist,
@@ -11,9 +12,11 @@ import {
   useWhatsAppContacts,
   useAddWhitelistBulk,
 } from '@/hooks/useWhitelist';
+import { useSetWhitelistEzyLink } from '@/hooks/useEzyPortal';
 import { useToast } from '@/components/ui/Toast';
 import { formatPhone } from '@/lib/format';
 import { ApiError } from '@/lib/api';
+import type { WhitelistEntry } from '@/types';
 
 export function WhitelistPage() {
   const { data: whitelist, isLoading } = useWhitelist();
@@ -25,6 +28,9 @@ export function WhitelistPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const contacts = useWhatsAppContacts(pickerOpen);
   const addBulk = useAddWhitelistBulk();
+
+  const [linkingEntry, setLinkingEntry] = useState<WhitelistEntry | null>(null);
+  const setEzyLink = useSetWhitelistEzyLink();
 
   return (
     <>
@@ -75,6 +81,7 @@ export function WhitelistPage() {
               onSettled: () => setRemovingId(null),
             });
           }}
+          onLink={(row) => setLinkingEntry(row)}
         />
       </div>
 
@@ -112,6 +119,29 @@ export function WhitelistPage() {
                 description: e instanceof Error ? e.message : 'Please try again.',
               }),
           });
+        }}
+      />
+
+      <EzyPortalLinkModal
+        open={linkingEntry != null}
+        entry={linkingEntry}
+        submitting={setEzyLink.isPending}
+        error={setEzyLink.isError ? (setEzyLink.error instanceof Error ? setEzyLink.error.message : 'Could not save link. Please try again.') : null}
+        onClose={() => {
+          setLinkingEntry(null);
+          setEzyLink.reset();
+        }}
+        onSave={(link) => {
+          if (!linkingEntry) return;
+          setEzyLink.mutate(
+            { id: linkingEntry.id, link },
+            {
+              onSuccess: () => {
+                toast({ tone: 'success', title: 'Linked to EZY Portal', description: `${link.bpName} · ${link.contactName}` });
+                setLinkingEntry(null);
+              },
+            },
+          );
         }}
       />
     </>

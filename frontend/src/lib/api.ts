@@ -12,9 +12,13 @@ import type {
   ConversationThread,
   CostEntry,
   CostSummary,
+  CreateEzyContactInput,
   CredentialSummary,
   CredentialsList,
   DailyCost,
+  EzyBusinessPartner,
+  EzyContact,
+  EzyLinkInput,
   HealthData,
   QrData,
   StatusData,
@@ -89,6 +93,24 @@ export const api = {
   removeWhitelist: (number: string) =>
     request<{ removed: boolean }>(`/whitelist/${encodeURIComponent(number)}`, {
       method: 'DELETE',
+    }),
+  setWhitelistEzyLink: (id: string | number, link: EzyLinkInput) =>
+    request<WhitelistEntry>(`/whitelist/${encodeURIComponent(String(id))}/ezy-link`, {
+      method: 'PUT',
+      body: JSON.stringify(link),
+    }),
+
+  // EZY Portal business partners + contacts (whitelist "link to EZY Portal" flow).
+  listEzyBusinessPartners: (query?: string) =>
+    request<EzyBusinessPartner[]>(
+      `/ezy-portal/business-partners${query ? `?query=${encodeURIComponent(query)}` : ''}`,
+    ),
+  listEzyContacts: (bpId: string) =>
+    request<EzyContact[]>(`/ezy-portal/business-partners/${encodeURIComponent(bpId)}/contacts`),
+  createEzyContact: (bpId: string, input: CreateEzyContactInput) =>
+    request<EzyContact>(`/ezy-portal/business-partners/${encodeURIComponent(bpId)}/contacts`, {
+      method: 'POST',
+      body: JSON.stringify(input),
     }),
 
   // Real WhatsApp contacts from the linked account (for the "browse contacts" picker).

@@ -13,6 +13,7 @@ import { credentialsRouter } from './credentials/credentials.routes';
 import { credentialsService } from './credentials/credentials.service';
 import { backfillRouter } from './backfill/backfill.routes';
 import { costsRouter } from './costs/cost.routes';
+import { ezyPortalRouter } from './ezy-portal/ezy-portal.routes';
 import { runTranscriptionPass } from './enrichment/worker';
 import { whatsappService } from './whatsapp/client';
 import { ignoredStats } from './messages/ignored-stats';
@@ -84,6 +85,7 @@ function buildApp() {
   app.use('/credentials', credentialsRouter);
   app.use('/backfill', backfillRouter);
   app.use('/costs', costsRouter);
+  app.use('/ezy-portal', ezyPortalRouter);
 
   // 404
   app.use((_req, res) => res.status(404).json({ error: 'Not found' }));

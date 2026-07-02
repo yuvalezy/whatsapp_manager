@@ -34,6 +34,43 @@ whitelistRouter.post('/', async (req, res, next) => {
   }
 });
 
+// PUT /whitelist/:id/ezy-link — { bpId, bpCode, bpName, contactId, contactName }
+whitelistRouter.put('/:id/ezy-link', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      res.status(400).json({ error: 'Invalid whitelist id' });
+      return;
+    }
+    const { bpId, bpCode, bpName, contactId, contactName } = (req.body ?? {}) as Record<string, unknown>;
+    if (
+      typeof bpId !== 'string' ||
+      !bpId.trim() ||
+      typeof contactId !== 'string' ||
+      !contactId.trim() ||
+      typeof bpName !== 'string' ||
+      typeof contactName !== 'string'
+    ) {
+      res.status(400).json({ error: '"bpId", "bpName", "contactId", and "contactName" are required' });
+      return;
+    }
+    const entry = await whitelistService.setEzyLink(id, {
+      bpId: bpId.trim(),
+      bpCode: typeof bpCode === 'string' ? bpCode.trim() : '',
+      bpName: bpName.trim(),
+      contactId: contactId.trim(),
+      contactName: contactName.trim(),
+    });
+    if (!entry) {
+      res.status(404).json({ error: 'Whitelist entry not found' });
+      return;
+    }
+    res.json({ data: entry });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /whitelist/:number
 whitelistRouter.delete('/:number', async (req, res, next) => {
   try {
