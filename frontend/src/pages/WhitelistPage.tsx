@@ -11,6 +11,7 @@ import {
   useWhitelist,
   useAddWhitelist,
   useRemoveWhitelist,
+  useUpdateWhitelist,
   useWhatsAppContacts,
   useAddWhitelistBulk,
 } from '@/hooks/useWhitelist';
@@ -31,6 +32,7 @@ export function WhitelistPage() {
   const { data: whitelist, isLoading } = useWhitelist();
   const add = useAddWhitelist();
   const remove = useRemoveWhitelist();
+  const update = useUpdateWhitelist();
   const { toast } = useToast();
   const [removingId, setRemovingId] = useState<string | number | null>(null);
 
@@ -106,6 +108,20 @@ export function WhitelistPage() {
             });
           }}
           onLink={(row) => setLinkingEntry(row)}
+          onUpdate={({ id, label, preferred_language }) =>
+            update.mutate(
+              { id, label, preferred_language },
+              {
+                onSuccess: () => toast({ tone: 'success', title: 'Contact updated' }),
+                onError: (e) =>
+                  toast({
+                    tone: 'danger',
+                    title: 'Could not update contact',
+                    description: e instanceof Error ? e.message : 'Please try again.',
+                  }),
+              },
+            )
+          }
         />
 
         <div className="flex flex-col gap-3">

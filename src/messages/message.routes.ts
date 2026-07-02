@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import fs from 'node:fs';
-import { messageService } from './message.service';
+import { messageService, ExportRow } from './message.service';
 import { StoredMessage } from './message.model';
 import { translationService } from '../enrichment/translation.service';
 import { draftReplyService } from '../enrichment/draft-reply.service';
@@ -24,13 +24,138 @@ function parsePaging(query: Record<string, unknown>): { limit: number; offset: n
   return { limit, offset };
 }
 
-// GET /messages?limit=&offset=
+function parseDirection(v: unknown): 'inbound' | 'outbound' | undefined {
+  return v === 'inbound' || v === 'outbound' ? v : undefined;
+}
+
+function parseStr(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
+}
+
+function parseBool(v: unknown): boolean | undefined {
+  if (v === 'true' || v === '1') return true;
+  if (v === 'false' || v === '0') return false;
+  return undefined;
+}
+
+// Export column order — the CSV header and each CSV/NDJSON row derive from this
+// one list so they can never drift apart.
+const EXPORT_COLUMNS: (keyof ExportRow)[] = [
+  'id', 'message_id', 'contact_number', 'sender_number', 'sender_name',
+  'direction', 'message_type', 'body', 'transcript', 'translated_body',
+  'timestamp', 'is_deleted',
+];
+const EXPORT_CSV_HEADER = EXPORT_COLUMNS.join(',');
+
+/** RFC-4180 CSV cell: quote when it contains a comma, quote, or newline. */
+function csvCell(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  const s = String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function toCsvLine(row: ExportRow): string {
+  return EXPORT_COLUMNS.map((c) => csvCell(row[c])).join(',');
+}
+
+// GET /messages?limit=&offset=&updated_since=&direction=&type=&contactNumber=&hasMedia=
+// Global feed with optional filters; `updated_since` (ISO) drives incremental sync.
 messagesRouter.get('/', async (req, res, next) => {
   try {
-    const { limit, offset } = parsePaging(req.query as Record<string, unknown>);
-    res.json({ data: await messageService.list(limit, offset), paging: { limit, offset } });
+    const q = req.query as Record<string, unknown>;
+    const { limit, offset } = parsePaging(q);
+    const { rows, total } = await messageService.list({
+      limit,
+      offset,
+      updatedSince: parseStr(q.updated_since),
+      direction: parseDirection(q.direction),
+      type: parseStr(q.type),
+      contactNumber: parseStr(q.contactNumber),
+      hasMedia: parseBool(q.hasMedia),
+    });
+    res.json({ data: rows, paging: { limit, offset, total } });
   } catch (err) {
     next(err);
+  }
+});
+
+// GET /messages/count — lightweight total-messages KPI for the dashboard.
+messagesRouter.get('/count', async (_req, res, next) => {
+  try {
+    res.json({ data: { total: await messageService.total() } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /messages/search?q=&limit=&offset=&direction=&type=&contactNumber=
+// Full-text search across body + transcript + translated_body.
+messagesRouter.get('/search', async (req, res, next) => {
+  try {
+    const q = req.query as Record<string, unknown>;
+    const term = parseStr(q.q);
+    const { limit, offset } = parsePaging(q);
+    if (!term) {
+      res.json({ data: [], paging: { limit, offset, total: 0 } });
+      return;
+    }
+    const { rows, total } = await messageService.searchMessages(term, {
+      limit,
+      offset,
+      direction: parseDirection(q.direction),
+      type: parseStr(q.type),
+      contactNumber: parseStr(q.contactNumber),
+    });
+    res.json({ data: rows, paging: { limit, offset, total } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /messages/stats — read-only aggregate KPIs + a 30-day timeseries + top
+// contacts, for the dashboard/stats page. All SQL lives in message.service.
+messagesRouter.get('/stats', async (_req, res, next) => {
+  try {
+    res.json({ data: await messageService.getStats() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /messages/export?number=&format=json|csv — stream a thread (or every
+// stored message when `number` is omitted) as NDJSON (default) or CSV. Rows are
+// streamed in id-ascending batches, so memory stays bounded regardless of size.
+messagesRouter.get('/export', async (req, res, next) => {
+  const q = req.query as Record<string, unknown>;
+  const number = parseStr(q.number);
+  const format = q.format === 'csv' ? 'csv' : 'json';
+  const stamp = new Date().toISOString().slice(0, 10);
+  const safe = (number ?? 'all').replace(/[^A-Za-z0-9._-]/g, '_');
+  try {
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="messages-${safe}-${stamp}.csv"`);
+      res.write(EXPORT_CSV_HEADER + '\n');
+      for await (const row of messageService.streamForExport(number)) {
+        res.write(toCsvLine(row) + '\n');
+      }
+    } else {
+      res.setHeader('Content-Type', 'application/x-ndjson');
+      res.setHeader('Content-Disposition', `attachment; filename="messages-${safe}-${stamp}.ndjson"`);
+      for await (const row of messageService.streamForExport(number)) {
+        res.write(JSON.stringify(row) + '\n');
+      }
+    }
+    res.end();
+  } catch (err) {
+    // Once streaming has begun the headers are already flushed, so we can't send
+    // a JSON error envelope — just log and close the connection.
+    if (res.headersSent) {
+      logger.error({ err, number }, 'Export stream failed after headers sent');
+      res.end();
+    } else {
+      next(err);
+    }
   }
 });
 
@@ -400,9 +525,19 @@ messagesRouter.get('/:id/media', async (req, res, next) => {
 });
 
 // GET /messages/:number?limit=&offset=  — full thread for a contact (both directions).
+// Pass `before` (ISO timestamp) + `beforeId` for drift-free keyset "load older"
+// paging instead of offset — returns messages strictly older than that cursor.
 messagesRouter.get('/:number', async (req, res, next) => {
   try {
-    const { limit, offset } = parsePaging(req.query as Record<string, unknown>);
+    const q = req.query as Record<string, unknown>;
+    const { limit, offset } = parsePaging(q);
+    const before = parseStr(q.before);
+    const beforeId = parseStr(q.beforeId);
+    if (before && beforeId && /^\d+$/.test(beforeId)) {
+      const data = await messageService.listByNumberBefore(req.params.number, before, beforeId, limit);
+      res.json({ data, paging: { limit } });
+      return;
+    }
     const data = await messageService.listByNumber(req.params.number, limit, offset);
     res.json({ data, paging: { limit, offset } });
   } catch (err) {

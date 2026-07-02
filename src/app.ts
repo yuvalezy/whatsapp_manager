@@ -3,7 +3,7 @@ import helmet from 'helmet';
 import { env } from './config/env';
 import { logger } from './logger';
 import { runMigrations } from './db/migrate';
-import { closePool } from './db';
+import { closePool, query } from './db';
 import { whitelistService } from './whitelist/whitelist.service';
 import { whitelistRouter } from './whitelist/whitelist.routes';
 import { groupService } from './groups/group.service';
@@ -45,8 +45,31 @@ function buildApp() {
   app.use(express.json({ limit: '256kb' }));
 
   // Public health check (no auth) — useful for Docker/K8s probes.
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', uptime: process.uptime(), state: whatsappService.getState() });
+  // Probes Postgres with a bare `SELECT 1` (bounded by a short timeout so a
+  // black-holed DB can't hang the probe) and reports 503 when the DB is down,
+  // so a dead database no longer returns a healthy 200.
+  app.get('/health', async (_req, res) => {
+    let dbOk = false;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        query('SELECT 1'),
+        new Promise((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error('DB health probe timed out')), 2000);
+        }),
+      ]);
+      dbOk = true;
+    } catch (err) {
+      logger.error({ err }, 'Health check DB probe failed');
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    res.status(dbOk ? 200 : 503).json({
+      status: dbOk ? 'ok' : 'degraded',
+      uptime: process.uptime(),
+      state: whatsappService.getState(),
+      db: dbOk ? 'ok' : 'down',
+    });
   });
 
   // Everything below may require the API key (if configured).
@@ -62,6 +85,7 @@ function buildApp() {
         'GET /contacts',
         'GET /whitelist',
         'POST /whitelist',
+        'PUT /whitelist/:id',
         'DELETE /whitelist/:number',
         'GET /groups',
         'GET /groups/available',

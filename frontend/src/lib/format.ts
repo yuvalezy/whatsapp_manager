@@ -94,6 +94,34 @@ export function formatUsd(amount: number | null | undefined, precise = false): s
   }).format(value);
 }
 
+/** Local calendar-day key (`YYYY-MM-DD`) for grouping messages into day buckets. */
+export function dayKey(input: string | number | Date | null | undefined): string {
+  const d = input == null ? new Date(NaN) : new Date(input);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Divider label for a message's day: "Today", "Yesterday", or an absolute date. */
+export function dayDividerLabel(input: string | number | Date | null | undefined): string {
+  if (input == null) return '';
+  const d = new Date(input);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return d.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
+  });
+}
+
 /** Deterministic hue (0–359) derived from a string — used for avatar tints. */
 export function hueFromString(str: string): number {
   let hash = 0;

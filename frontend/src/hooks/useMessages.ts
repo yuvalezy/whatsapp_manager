@@ -11,6 +11,15 @@ export function useMessages(params?: { limit?: number; offset?: number }) {
   });
 }
 
+/** Total number of captured messages — the real "Messages captured" KPI value
+ * (the recent-list fetch is limited, so its length under-counts). */
+export function useMessageCount() {
+  return useQuery<{ total: number }>({
+    queryKey: ['messages', 'count'],
+    queryFn: () => api.getMessageCount(),
+  });
+}
+
 /**
  * Messages for a single number. Pass the display number in any format — it's
  * normalized to digits (matching the backend route). Disabled for 'all'/empty.

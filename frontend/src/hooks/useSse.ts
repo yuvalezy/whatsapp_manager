@@ -85,6 +85,24 @@ export function useSse() {
       }
     });
 
+    // In-place update to an already-captured message: a sender edit, a revoke
+    // (soft-delete), or the background transcription worker finishing. Refresh
+    // the affected thread + the list; no notification — it isn't a new inbound
+    // message. (Translation self-invalidates via its own mutation; reactions
+    // have no UI consumer yet, so neither broadcasts here.)
+    es.addEventListener('message-updated', (e: MessageEvent) => {
+      try {
+        const msg = JSON.parse(e.data) as StoredMessage;
+        const normalized = normalizeNumber(msg.contact_number || '');
+        if (normalized) {
+          qc.invalidateQueries({ queryKey: ['messages', 'by-number', normalized] });
+        }
+        qc.invalidateQueries({ queryKey: ['threads'] });
+      } catch {
+        /* ignore */
+      }
+    });
+
     es.addEventListener('status', (e: MessageEvent) => {
       try {
         const status = JSON.parse(e.data) as StatusData;

@@ -1,14 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/Button';
+import { IconButton } from '@/components/ui/IconButton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/Toast';
 import { ConversationList, threadName } from '@/components/domain/ConversationList';
 import { Input } from '@/components/ui/Input';
 import { MessageBubble } from '@/components/domain/MessageBubble';
+import { ThreadFindBar } from '@/components/domain/ThreadFindBar';
+import { DayDivider } from '@/components/domain/DayDivider';
 import { ComposeReply } from '@/components/domain/ComposeReply';
 import { PhoneNumber } from '@/components/domain/PhoneNumber';
 import { useThreads, useConversationThread, useTranslateAll, useMarkRead } from '@/hooks/useThreads';
@@ -16,8 +20,27 @@ import { useStatus } from '@/hooks/useStatus';
 import { useSummarize } from '@/hooks/useSummaries';
 import { SummarizeModal } from '@/components/domain/SummarizeModal';
 import { SummaryHistoryModal } from '@/components/domain/SummaryHistoryModal';
-import { formatPhone } from '@/lib/format';
-import type { ComposeState, SummarizeInput } from '@/types';
+import { api } from '@/lib/api';
+import { dayKey, formatPhone, normalizeNumber } from '@/lib/format';
+import type { ComposeState, StoredMessage, SummarizeInput } from '@/types';
+
+// Newest-page size loaded by useConversationThread; older pages start past it.
+const THREAD_PAGE = 500;
+const OLDER_PAGE = 200;
+
+/** De-duplicate messages by id, keeping first occurrence (older page first). */
+function dedupeById(list: StoredMessage[]): StoredMessage[] {
+  const seen = new Set<string>();
+  const out: StoredMessage[] = [];
+  for (const m of list) {
+    const key = String(m.id);
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(m);
+    }
+  }
+  return out;
+}
 
 // ============================================================================
 // ConversationsPage — WhatsApp-style two-pane view: whitelisted contacts on
@@ -27,12 +50,19 @@ import type { ComposeState, SummarizeInput } from '@/types';
 // ============================================================================
 
 export function ConversationsPage() {
-  const { data: threads, isLoading: threadsLoading } = useThreads();
+  const {
+    data: threads,
+    isLoading: threadsLoading,
+    isError: threadsError,
+    refetch: refetchThreads,
+  } = useThreads();
   const [searchParams, setSearchParams] = useSearchParams();
   const selected = searchParams.get('number');
   const { toast } = useToast();
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const paneRef = useRef<HTMLDivElement>(null);
+  const findInputRef = useRef<HTMLInputElement>(null);
   // Whether the message list is pinned to the bottom — drives "follow new
   // messages only if the user is already at the bottom" (WhatsApp behavior).
   const atBottomRef = useRef(true);
@@ -40,6 +70,16 @@ export function ConversationsPage() {
   const [composeState, setComposeState] = useState<ComposeState>('idle');
   const [messageCount, setMessageCount] = useState(1);
   const [search, setSearch] = useState('');
+
+  // In-thread find state.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findActiveIndex, setFindActiveIndex] = useState(0);
+
+  // Older-history paging (prepended to the live newest-500 thread).
+  const [older, setOlder] = useState<StoredMessage[]>([]);
+  const [olderExhausted, setOlderExhausted] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const summarize = useSummarize();
   const [summarizeOpen, setSummarizeOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -55,7 +95,12 @@ export function ConversationsPage() {
     }
   }, [selected, threads, setSearchParams]);
 
-  const { data: messages, isLoading: threadLoading } = useConversationThread(selected);
+  const {
+    data: messages,
+    isLoading: threadLoading,
+    isError: threadError,
+    refetch: refetchThread,
+  } = useConversationThread(selected);
   const translateAll = useTranslateAll();
   const markRead = useMarkRead();
 
@@ -71,13 +116,127 @@ export function ConversationsPage() {
     });
   }, [threads, search]);
 
+  // Merge older (manually loaded) history in front of the live newest page.
   const ordered = useMemo(
     () =>
-      [...(messages ?? [])].sort(
+      dedupeById([...older, ...(messages ?? [])]).sort(
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
       ),
-    [messages],
+    [older, messages],
   );
+
+  // "Load older" is offered only while the newest page is full (there may be
+  // more) or we've already pulled at least one older page and aren't exhausted.
+  const baseCount = messages?.length ?? 0;
+  const canLoadOlder = !olderExhausted && (baseCount >= THREAD_PAGE || older.length > 0);
+
+  const loadOlder = () => {
+    if (!selected || loadingOlder || olderExhausted) return;
+    // Keyset cursor: fetch messages strictly older than the oldest one currently
+    // loaded (by timestamp, tie-broken by id). Drift-free — a live message landing
+    // mid-request can't shift a numbered offset out from under us and silently skip
+    // a row, the way `offset = THREAD_PAGE + older.length` could.
+    const oldest = ordered[0];
+    if (!oldest) return;
+    const el = scrollRef.current;
+    const prevHeight = el?.scrollHeight ?? 0;
+    const prevTop = el?.scrollTop ?? 0;
+    setLoadingOlder(true);
+    api
+      .listMessagesByNumber(normalizeNumber(selected), {
+        limit: OLDER_PAGE,
+        before: new Date(oldest.timestamp).toISOString(),
+        beforeId: oldest.id,
+      })
+      .then((page) => {
+        if (page.length < OLDER_PAGE) setOlderExhausted(true);
+        if (page.length > 0) {
+          setOlder((prev) => dedupeById([...prev, ...page]));
+          // Preserve the viewport: keep the same message under the user's eye by
+          // adding the height the prepended page introduced.
+          requestAnimationFrame(() => {
+            const now = scrollRef.current;
+            if (now) now.scrollTop = prevTop + (now.scrollHeight - prevHeight);
+          });
+        }
+      })
+      .catch((e) =>
+        toast({
+          tone: 'danger',
+          title: 'Couldn’t load older messages',
+          description: e instanceof Error ? e.message : 'Please try again.',
+        }),
+      )
+      .finally(() => setLoadingOlder(false));
+  };
+
+  // In-thread find: messages whose text (body/transcript/translation) matches.
+  const findNeedle = findQuery.trim().toLowerCase();
+  const findActive = findOpen && findNeedle.length > 0;
+  const matchIds = useMemo(() => {
+    if (!findActive) return [] as (string | number)[];
+    return ordered
+      .filter((m) => {
+        const hay = [m.body, m.transcript, m.translated_body, m.transcript_translated]
+          .filter(Boolean)
+          .join('\n')
+          .toLowerCase();
+        return hay.includes(findNeedle);
+      })
+      .map((m) => m.id);
+  }, [ordered, findActive, findNeedle]);
+
+  const activeIndex = matchIds.length === 0 ? -1 : Math.min(findActiveIndex, matchIds.length - 1);
+  const activeMatchId = activeIndex >= 0 ? matchIds[activeIndex] : null;
+
+  const gotoNext = () => {
+    if (matchIds.length === 0) return;
+    setFindActiveIndex((Math.max(0, activeIndex) + 1) % matchIds.length);
+  };
+  const gotoPrev = () => {
+    if (matchIds.length === 0) return;
+    setFindActiveIndex((Math.max(0, activeIndex) - 1 + matchIds.length) % matchIds.length);
+  };
+
+  const openFind = useCallback(() => {
+    setFindOpen(true);
+    setTimeout(() => findInputRef.current?.focus(), 0);
+  }, []);
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    setFindQuery('');
+    setFindActiveIndex(0);
+  }, []);
+
+  // Reset the active match when the search term changes.
+  useEffect(() => {
+    setFindActiveIndex(0);
+  }, [findNeedle]);
+
+  // Keyboard: `/` or Ctrl/Cmd+F opens find, scoped to the conversation pane.
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e: KeyboardEvent) => {
+      const isFindCombo = (e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F');
+      const isSlash = e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey;
+      if (!isFindCombo && !isSlash) return;
+      const target = e.target as HTMLElement | null;
+      const typing =
+        !!target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable);
+      // Don't steal focus while composing a reply / searching — for either the
+      // `/` shortcut or Ctrl/Cmd+F.
+      if (typing) return;
+      const inPane = !!target && (paneRef.current?.contains(target) ?? false);
+      if (!inPane && document.activeElement !== document.body) return;
+      e.preventDefault();
+      openFind();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [selected, openFind]);
 
   // Mark the open thread read (clears unread + WhatsApp sendSeen) when it's
   // opened, when a new message lands while watching, or when the tab regains
@@ -112,10 +271,22 @@ export function ConversationsPage() {
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
   };
 
-  // On thread switch: always jump to the newest message (instant).
+  // On thread switch: reset older-history + find + compose, then jump to newest
+  // (instant). Keyed on `selected` so EVERY entry path resets the parent-owned
+  // compose panel — sidebar click, search navigation, or a direct `?number=` URL
+  // — not just the sidebar handler (else you land on a new thread with a stale
+  // 'preview'/'sending' panel).
   useEffect(() => {
     atBottomRef.current = true;
     bottomRef.current?.scrollIntoView({ block: 'end' });
+    setOlder([]);
+    setOlderExhausted(false);
+    setLoadingOlder(false);
+    setFindOpen(false);
+    setFindQuery('');
+    setFindActiveIndex(0);
+    setComposeState('idle');
+    setMessageCount(1);
   }, [selected]);
 
   // On a new message: follow to the bottom only if we were already pinned there.
@@ -187,19 +358,24 @@ export function ConversationsPage() {
             />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <ConversationList
-              threads={filteredThreads}
-              selected={selected}
-              onSelect={(number) => {
-                setSearchParams({ number });
-                setComposeState('idle');
-              }}
-              loading={threadsLoading}
-            />
+            {threadsError ? (
+              <ErrorState
+                title="Couldn't load conversations"
+                description="The conversation list failed to load."
+                onRetry={() => void refetchThreads()}
+              />
+            ) : (
+              <ConversationList
+                threads={filteredThreads}
+                selected={selected}
+                onSelect={(number) => setSearchParams({ number })}
+                loading={threadsLoading}
+              />
+            )}
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-bg">
+        <div ref={paneRef} className="flex min-w-0 flex-1 flex-col overflow-hidden bg-bg">
           {!selected ? (
             <EmptyState
               icon="messageSquare"
@@ -224,6 +400,13 @@ export function ConversationsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <IconButton
+                    icon="search"
+                    size="sm"
+                    variant="solid"
+                    ariaLabel="Find in conversation"
+                    onClick={() => (findOpen ? closeFind() : openFind())}
+                  />
                   <Button
                     variant="secondary"
                     icon="sparkles"
@@ -243,6 +426,13 @@ export function ConversationsPage() {
                   />
                   <Button
                     variant="secondary"
+                    icon="download"
+                    size="sm"
+                    label="Export"
+                    onClick={() => window.open(api.exportUrl(selected, 'csv'), '_blank')}
+                  />
+                  <Button
+                    variant="secondary"
                     icon="languages"
                     size="sm"
                     loading={translateAll.isPending}
@@ -253,9 +443,30 @@ export function ConversationsPage() {
                 </div>
               </div>
 
+              {findOpen && (
+                <div className="flex shrink-0 items-center justify-end border-b border-line-strong bg-surface px-5 py-2">
+                  <ThreadFindBar
+                    ref={findInputRef}
+                    query={findQuery}
+                    onQueryChange={setFindQuery}
+                    matchCount={matchIds.length}
+                    activeIndex={activeIndex}
+                    onPrev={gotoPrev}
+                    onNext={gotoNext}
+                    onClose={closeFind}
+                  />
+                </div>
+              )}
+
               <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
                 {threadLoading ? (
                   <div className="text-[13px] text-fg-muted">Loading…</div>
+                ) : threadError ? (
+                  <ErrorState
+                    title="Couldn't load messages"
+                    description="This conversation failed to load."
+                    onRetry={() => void refetchThread()}
+                  />
                 ) : ordered.length === 0 ? (
                   <EmptyState
                     icon="messageSquare"
@@ -264,14 +475,39 @@ export function ConversationsPage() {
                   />
                 ) : (
                   <div className="flex flex-col gap-2.5">
-                    {ordered.map((m) => (
-                      <MessageBubble
-                        key={m.id}
-                        message={m}
-                        highlighted={highlightedIds.has(m.id)}
-                        showSender={isGroup}
-                      />
-                    ))}
+                    {canLoadOlder && (
+                      <div className="flex justify-center py-1">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon="chevronUp"
+                          loading={loadingOlder}
+                          label="Load older messages"
+                          onClick={loadOlder}
+                        />
+                      </div>
+                    )}
+                    {olderExhausted && older.length > 0 && (
+                      <div className="py-1 text-center text-[11.5px] text-fg-muted">
+                        Beginning of conversation
+                      </div>
+                    )}
+                    {ordered.map((m, i) => {
+                      const prev = ordered[i - 1];
+                      const showDivider = !prev || dayKey(prev.timestamp) !== dayKey(m.timestamp);
+                      return (
+                        <Fragment key={m.id}>
+                          {showDivider && <DayDivider timestamp={m.timestamp} />}
+                          <MessageBubble
+                            message={m}
+                            highlighted={highlightedIds.has(m.id)}
+                            showSender={isGroup}
+                            findTerm={findActive ? findQuery.trim() : undefined}
+                            activeMatch={activeMatchId != null && m.id === activeMatchId}
+                          />
+                        </Fragment>
+                      );
+                    })}
                     <div ref={bottomRef} />
                   </div>
                 )}
@@ -279,6 +515,7 @@ export function ConversationsPage() {
 
               {outboundEnabled ? (
                 <ComposeReply
+                  key={selected}
                   contactNumber={selected}
                   isGroup={isGroup}
                   messageCount={messageCount}

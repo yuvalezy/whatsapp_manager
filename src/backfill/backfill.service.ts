@@ -6,6 +6,7 @@ import { groupService } from '../groups/group.service';
 import { messageService } from '../messages/message.service';
 import { buildRoutable } from '../whatsapp/message-mapper';
 import { resolveContactNumber } from '../whatsapp/lid-resolver';
+import { SKIP_TYPES } from '../whatsapp/message-types';
 import { normalizeNumber, toChatId, toGroupChatId } from '../utils/phone';
 
 export interface BackfillStatus {
@@ -17,21 +18,6 @@ export interface BackfillStatus {
   currentNumber: string | null;
   error: string | null;
 }
-
-/** System / non-conversational message types we skip during backfill. */
-const SKIP_TYPES = new Set([
-  'e2e_notification',
-  'notification',
-  'notification_template',
-  'gp2',
-  'group_notification',
-  'protocol',
-  'ciphertext',
-  'revoked',
-  'call_log',
-  'broadcast_notification',
-  'debug',
-]);
 
 /**
  * Pulls conversation history for whitelisted contacts via

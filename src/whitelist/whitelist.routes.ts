@@ -1,5 +1,7 @@
 import { Router } from 'express';
-import { whitelistService, ValidationError } from './whitelist.service';
+import { whitelistService, ValidationError, PreferredLanguage } from './whitelist.service';
+
+const PREFERRED_LANGUAGES: readonly PreferredLanguage[] = ['es', 'en', 'he'];
 
 export const whitelistRouter = Router();
 
@@ -61,6 +63,52 @@ whitelistRouter.put('/:id/ezy-link', async (req, res, next) => {
       contactId: contactId.trim(),
       contactName: contactName.trim(),
     });
+    if (!entry) {
+      res.status(404).json({ error: 'Whitelist entry not found' });
+      return;
+    }
+    res.json({ data: entry });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /whitelist/:id — edit label and/or preferred_language.
+// { label?: string | null, preferred_language?: 'es' | 'en' | 'he' }
+whitelistRouter.put('/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      res.status(400).json({ error: 'Invalid whitelist id' });
+      return;
+    }
+    const body = (req.body ?? {}) as { label?: unknown; preferred_language?: unknown };
+    const updates: { label?: string | null; preferredLanguage?: PreferredLanguage } = {};
+
+    if ('label' in body) {
+      const { label } = body;
+      if (label !== null && typeof label !== 'string') {
+        res.status(400).json({ error: '"label" must be a string or null' });
+        return;
+      }
+      updates.label = label;
+    }
+
+    if ('preferred_language' in body) {
+      const lang = body.preferred_language;
+      if (!PREFERRED_LANGUAGES.includes(lang as PreferredLanguage)) {
+        res.status(400).json({ error: '"preferred_language" must be one of: es, en, he' });
+        return;
+      }
+      updates.preferredLanguage = lang as PreferredLanguage;
+    }
+
+    if (updates.label === undefined && updates.preferredLanguage === undefined) {
+      res.status(400).json({ error: 'Provide at least one of "label" or "preferred_language"' });
+      return;
+    }
+
+    const entry = await whitelistService.updateEntry(id, updates);
     if (!entry) {
       res.status(404).json({ error: 'Whitelist entry not found' });
       return;

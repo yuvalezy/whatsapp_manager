@@ -9,8 +9,9 @@ import { IgnoredCountersPanel } from '@/components/domain/IgnoredCountersPanel';
 import { SafetyFlags } from '@/components/domain/SafetyFlags';
 import { MessageList } from '@/components/domain/MessageList';
 import { MessageDetail } from '@/components/domain/MessageDetail';
+import { ErrorState } from '@/components/ui/ErrorState';
 import { useStatus } from '@/hooks/useStatus';
-import { useMessages } from '@/hooks/useMessages';
+import { useMessages, useMessageCount } from '@/hooks/useMessages';
 import { useCostSummary } from '@/hooks/useCosts';
 import { formatUsd } from '@/lib/format';
 import type { ConnectionState, StoredMessage } from '@/types';
@@ -27,7 +28,12 @@ const CONNECTION_LABELS: Record<ConnectionState, string> = {
 
 export function DashboardPage() {
   const { data: status } = useStatus();
-  const { data: messages, isLoading } = useMessages({ limit: 6 });
+  const { data: messages, isLoading, isError, refetch } = useMessages({ limit: 6 });
+  const {
+    data: messageCount,
+    isLoading: countLoading,
+    isError: countError,
+  } = useMessageCount();
   const { data: costSummary, isLoading: costLoading } = useCostSummary();
   const navigate = useNavigate();
   const [selected, setSelected] = useState<StoredMessage | null>(null);
@@ -52,9 +58,9 @@ export function DashboardPage() {
           />
           <StatCard
             label="Messages captured"
-            value={String(messages?.length ?? 0)}
+            value={countError ? '—' : (messageCount?.total ?? 0).toLocaleString()}
             icon="messageSquare"
-            loading={isLoading}
+            loading={countLoading}
           />
           <StatCard
             label="Ignored (dropped)"
@@ -92,14 +98,22 @@ export function DashboardPage() {
               onClick={() => navigate('/messages')}
             />
           </div>
-          <MessageList
-            rows={messages ?? []}
-            loading={isLoading}
-            onOpenMessage={(m) => {
-              setSelected(m);
-              setOpen(true);
-            }}
-          />
+          {isError ? (
+            <ErrorState
+              title="Couldn't load messages"
+              description="Recent captures failed to load."
+              onRetry={() => void refetch()}
+            />
+          ) : (
+            <MessageList
+              rows={messages ?? []}
+              loading={isLoading}
+              onOpenMessage={(m) => {
+                setSelected(m);
+                setOpen(true);
+              }}
+            />
+          )}
         </div>
 
         <MessageDetail open={open} message={selected ?? undefined} onClose={() => setOpen(false)} />

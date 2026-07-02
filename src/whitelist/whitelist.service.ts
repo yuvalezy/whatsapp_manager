@@ -82,6 +82,41 @@ class WhitelistService {
     return rows[0];
   }
 
+  /**
+   * Update the editable fields of a whitelist entry. Only fields present in
+   * `updates` are written (`undefined` = leave unchanged; `label: null` clears
+   * it). Neither field is part of the in-memory `Set` (which holds only numbers
+   * for `isWhitelisted`), so no cache update is needed here.
+   */
+  async updateEntry(
+    id: number,
+    updates: { label?: string | null; preferredLanguage?: PreferredLanguage },
+  ): Promise<WhitelistEntry | null> {
+    const sets: string[] = [];
+    const params: unknown[] = [id];
+    if (updates.label !== undefined) {
+      params.push(updates.label);
+      sets.push(`label = $${params.length}`);
+    }
+    if (updates.preferredLanguage !== undefined) {
+      params.push(updates.preferredLanguage);
+      sets.push(`preferred_language = $${params.length}`);
+    }
+    if (sets.length === 0) {
+      const { rows } = await query<WhitelistEntry>(
+        `SELECT ${ENTRY_COLUMNS} FROM whitelist WHERE id = $1`,
+        [id],
+      );
+      return rows[0] ?? null;
+    }
+    const { rows } = await query<WhitelistEntry>(
+      `UPDATE whitelist SET ${sets.join(', ')} WHERE id = $1 RETURNING ${ENTRY_COLUMNS}`,
+      params,
+    );
+    if (rows[0]) logger.info({ id }, 'Whitelist entry updated');
+    return rows[0] ?? null;
+  }
+
   /** Link (or replace the link on) a whitelist entry to an EZY Portal BP + contact. */
   async setEzyLink(id: number, link: EzyLinkInput): Promise<WhitelistEntry | null> {
     const { rows } = await query<WhitelistEntry>(

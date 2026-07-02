@@ -5,6 +5,8 @@ import { ConnectionPage } from '@/pages/ConnectionPage';
 import { WhitelistPage } from '@/pages/WhitelistPage';
 import { MessagesPage } from '@/pages/MessagesPage';
 import { ConversationsPage } from '@/pages/ConversationsPage';
+import { SearchPage } from '@/pages/SearchPage';
+import { InsightsPage } from '@/pages/InsightsPage';
 import { CostsPage } from '@/pages/CostsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { GalleryPage } from '@/pages/GalleryPage';
@@ -19,6 +21,8 @@ export function App() {
         <Route path="whitelist" element={<WhitelistPage />} />
         <Route path="messages" element={<MessagesPage />} />
         <Route path="conversations" element={<ConversationsPage />} />
+        <Route path="search" element={<SearchPage />} />
+        <Route path="insights" element={<InsightsPage />} />
         <Route path="costs" element={<CostsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>

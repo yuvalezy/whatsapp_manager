@@ -294,3 +294,41 @@ export interface DraftReplyResult {
 }
 
 export type ComposeState = 'idle' | 'composing' | 'generating' | 'preview' | 'sending';
+
+// Response envelope paging block (search + list endpoints include `total`).
+export interface Paging {
+  limit: number;
+  offset: number;
+  total: number;
+}
+
+// A page of full-text search results plus its paging block.
+export interface MessageSearchResult {
+  rows: StoredMessage[];
+  paging: Paging;
+}
+
+// Per-day inbound/outbound message volume (GET /messages/stats).
+export interface DailyVolume {
+  date: string;
+  inbound: number;
+  outbound: number;
+}
+
+// A contact ranked by captured message count (GET /messages/stats).
+export interface TopContact {
+  contact_number: string;
+  count: number;
+}
+
+// Aggregate message statistics for the Insights page (GET /messages/stats).
+export interface MessageStats {
+  totalMessages: number;
+  inbound: number;
+  outbound: number;
+  withMedia: number;
+  transcribed: number;
+  translated: number;
+  perDay: DailyVolume[];
+  topContacts: TopContact[];
+}

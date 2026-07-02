@@ -1,6 +1,8 @@
+import { env } from '../config/env';
 import { logger } from '../logger';
 import { RoutableMessage } from '../messages/message.model';
 import { messageService } from '../messages/message.service';
+import { WebhookMessageRouter } from './webhook-message-router';
 
 /**
  * MessageRouter is the single seam between WhatsApp ingestion and any
@@ -50,16 +52,18 @@ export class CompositeMessageRouter implements MessageRouter {
 
 // ── Future routers (kept as a reference for the clean extension point) ──
 //
-// export class WebhookMessageRouter implements MessageRouter {
-//   constructor(private readonly url: string) {}
-//   async route(message: RoutableMessage) {
-//     await fetch(this.url, { method: 'POST', body: JSON.stringify(message) });
-//   }
-// }
-//
 // export class AiOrchestratorRouter implements MessageRouter { ... }
 
-/** The app-wide router instance. Add more routers to the array to extend. */
-export const messageRouter: MessageRouter = new CompositeMessageRouter([
-  new StorageMessageRouter(),
-]);
+/**
+ * The app-wide router instance. StorageMessageRouter stays first (persistence
+ * is the primary sink); the webhook fan-out is added only when WEBHOOK_URL is
+ * configured. Add more routers to the array to extend.
+ */
+const routers: MessageRouter[] = [new StorageMessageRouter()];
+if (env.WEBHOOK_URL) {
+  routers.push(
+    new WebhookMessageRouter(env.WEBHOOK_URL, env.WEBHOOK_SECRET, env.WEBHOOK_TIMEOUT_MS),
+  );
+}
+
+export const messageRouter: MessageRouter = new CompositeMessageRouter(routers);

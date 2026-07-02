@@ -5,6 +5,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { MessageFilters } from '@/components/domain/MessageFilters';
 import { MessageList } from '@/components/domain/MessageList';
 import { MessageDetail } from '@/components/domain/MessageDetail';
+import { ErrorState } from '@/components/ui/ErrorState';
 import { useWhitelist } from '@/hooks/useWhitelist';
 import { useMessages } from '@/hooks/useMessages';
 import { normalizeNumber } from '@/lib/format';
@@ -14,7 +15,7 @@ const PAGE_SIZE = 15;
 
 export function MessagesPage() {
   const { data: whitelist } = useWhitelist();
-  const { data: messages, isLoading } = useMessages({ limit: 500 });
+  const { data: messages, isLoading, isError, refetch } = useMessages({ limit: 500 });
 
   const [search, setSearch] = useState('');
   const [numberFilter, setNumberFilter] = useState('all');
@@ -60,16 +61,24 @@ export function MessagesPage() {
           }}
         />
 
-        <MessageList
-          rows={pageItems}
-          loading={isLoading}
-          onOpenMessage={(m) => {
-            setSelected(m);
-            setOpen(true);
-          }}
-        />
+        {isError ? (
+          <ErrorState
+            title="Couldn't load messages"
+            description="Captured messages failed to load."
+            onRetry={() => void refetch()}
+          />
+        ) : (
+          <MessageList
+            rows={pageItems}
+            loading={isLoading}
+            onOpenMessage={(m) => {
+              setSelected(m);
+              setOpen(true);
+            }}
+          />
+        )}
 
-        {total > PAGE_SIZE && (
+        {!isError && total > PAGE_SIZE && (
           <div className="flex items-center justify-between">
             <span className="text-[12.5px] text-fg-muted">
               {rangeStart}–{rangeEnd} of {total}

@@ -3,6 +3,7 @@ import { StatCard } from '@/components/ui/StatCard';
 import { Badge } from '@/components/ui/Badge';
 import { Table, type TableColumn } from '@/components/ui/Table';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
 import { RelativeTime } from '@/components/domain/RelativeTime';
 import { useCostSummary, useDailyCosts, useRecentCosts } from '@/hooks/useCosts';
 import { formatUsd } from '@/lib/format';
@@ -23,8 +24,13 @@ function providerAmount(rows: { provider: CostProvider; cost_usd: number }[] | u
 
 export function CostsPage() {
   const { data: summary, isLoading: summaryLoading } = useCostSummary();
-  const { data: daily, isLoading: dailyLoading } = useDailyCosts(30);
-  const { data: recent, isLoading: recentLoading } = useRecentCosts(100);
+  const { data: daily, isLoading: dailyLoading, isError: dailyError, refetch: refetchDaily } = useDailyCosts(30);
+  const {
+    data: recent,
+    isLoading: recentLoading,
+    isError: recentError,
+    refetch: refetchRecent,
+  } = useRecentCosts(100);
 
   const dailyRows = buildDailyRows(daily ?? []);
 
@@ -99,7 +105,13 @@ export function CostsPage() {
 
         <div className="flex flex-col gap-2.5">
           <span className="text-[15px] font-bold text-fg">Last 30 days</span>
-          {dailyLoading ? (
+          {dailyError ? (
+            <ErrorState
+              title="Couldn't load daily costs"
+              description="The cost trend failed to load."
+              onRetry={() => void refetchDaily()}
+            />
+          ) : dailyLoading ? (
             <div className="p-5 text-[13px] text-fg-muted">Loading…</div>
           ) : dailyRows.length === 0 ? (
             <EmptyState icon="dollarSign" title="No costs recorded yet" description="Nothing transcribed or translated in this window." />
@@ -110,7 +122,13 @@ export function CostsPage() {
 
         <div className="flex flex-col gap-2.5">
           <span className="text-[15px] font-bold text-fg">Recent calls</span>
-          {recentLoading ? (
+          {recentError ? (
+            <ErrorState
+              title="Couldn't load recent calls"
+              description="Recent API calls failed to load."
+              onRetry={() => void refetchRecent()}
+            />
+          ) : recentLoading ? (
             <div className="p-5 text-[13px] text-fg-muted">Loading…</div>
           ) : (recent ?? []).length === 0 ? (
             <EmptyState icon="dollarSign" title="No API calls yet" description="Transcription and translation calls will show up here." />

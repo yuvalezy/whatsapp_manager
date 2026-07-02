@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { WhatsAppContact, WhitelistEntry } from '@/types';
+import type { PreferredLanguage, WhatsAppContact, WhitelistEntry } from '@/types';
 
 export function useWhitelist() {
   return useQuery<WhitelistEntry[]>({
@@ -28,6 +28,26 @@ export function useRemoveWhitelist() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['whitelist'] });
       void qc.invalidateQueries({ queryKey: ['status'] });
+    },
+  });
+}
+
+/** Edit a whitelist entry's label and/or preferred language (inline table edit). */
+export function useUpdateWhitelist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      label,
+      preferred_language,
+    }: {
+      id: string | number;
+      label?: string;
+      preferred_language?: PreferredLanguage;
+    }) => api.updateWhitelistEntry(id, { label, preferred_language }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['whitelist'] });
+      void qc.invalidateQueries({ queryKey: ['threads'] });
     },
   });
 }

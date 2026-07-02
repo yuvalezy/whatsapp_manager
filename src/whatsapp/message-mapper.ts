@@ -64,6 +64,20 @@ export async function buildRoutable(
 
   const media = await downloadAndStore(message, contactNumber);
 
+  // Reply/quote link. getQuotedMessage() is async but only fires when this
+  // message actually quotes another; its id._serialized matches the format we
+  // store as message_id, so the reference resolves against our own rows. Shared
+  // by live ingestion and backfill (both call buildRoutable).
+  let replyToMessageId: string | null = null;
+  if (message.hasQuotedMsg) {
+    try {
+      const quoted = await message.getQuotedMessage();
+      replyToMessageId = quoted?.id?._serialized ?? null;
+    } catch {
+      /* quoted message not resolvable (not in cache) — leave null */
+    }
+  }
+
   return {
     messageId: message.id._serialized,
     chatId,
@@ -76,6 +90,7 @@ export async function buildRoutable(
     timestamp: new Date(message.timestamp * 1000),
     detectedLanguage: body ? detectLanguageHint(body) : undefined,
     ack: message.ack,
+    replyToMessageId,
     media,
     metadata: {
       hasMedia: message.hasMedia,

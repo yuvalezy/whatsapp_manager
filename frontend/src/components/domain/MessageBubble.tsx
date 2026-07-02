@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import { StatusPill } from '@/components/ui/StatusPill';
+import { HighlightText } from '@/components/ui/HighlightText';
 import { MessageTypeBadge } from './MessageTypeBadge';
+import { MessageBubbleActions } from './MessageBubbleActions';
 import { ImageLightbox } from './ImageLightbox';
 import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/format';
@@ -11,6 +13,9 @@ import type { StoredMessage } from '@/types';
 // ============================================================================
 // MessageBubble — one WhatsApp-style chat bubble: media, body/transcript,
 // translation, and a timestamp. Aligned left (inbound) or right (outbound).
+// A hover/keyboard action menu (copy / translate / details) sits beside it.
+// When `findTerm` is set, matching text is highlighted; the `activeMatch`
+// bubble gets a ring and scrolls itself into view.
 // ============================================================================
 
 export interface MessageBubbleProps {
@@ -18,9 +23,19 @@ export interface MessageBubbleProps {
   highlighted?: boolean;
   /** Show the author's name above inbound bubbles (for group threads). */
   showSender?: boolean;
+  /** Active in-thread find term — highlights matches in body/transcript/translation. */
+  findTerm?: string;
+  /** This bubble is the currently-focused find match (ring + scroll-into-view). */
+  activeMatch?: boolean;
 }
 
-export function MessageBubble({ message: msg, highlighted = false, showSender = false }: MessageBubbleProps) {
+export function MessageBubble({
+  message: msg,
+  highlighted = false,
+  showSender = false,
+  findTerm,
+  activeMatch = false,
+}: MessageBubbleProps) {
   const isOutbound = msg.direction === 'outbound';
   const hasMediaFile = msg.media_status === 'downloaded';
   const hasBody = !!msg.body?.trim();
@@ -33,31 +48,53 @@ export function MessageBubble({ message: msg, highlighted = false, showSender = 
     minute: '2-digit',
   });
 
+  const rowRef = useRef<HTMLDivElement>(null);
+  // Bring the focused find match into view when it becomes active.
+  useEffect(() => {
+    if (activeMatch) rowRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [activeMatch]);
+
   return (
-    <div className={cn('flex', isOutbound ? 'justify-end' : 'justify-start', highlighted && 'border-l-[3px] border-primary pl-2')}>
+    <div
+      ref={rowRef}
+      className={cn(
+        'group flex items-center gap-1',
+        isOutbound ? 'justify-end' : 'justify-start',
+        highlighted && 'border-l-[3px] border-primary pl-2',
+      )}
+    >
+      {isOutbound && <MessageBubbleActions message={msg} align="end" />}
       <div
         className={cn(
           'flex max-w-[min(70%,480px)] flex-col gap-1.5 px-3.5 py-2.5 text-fg',
           isOutbound
             ? 'rounded-[14px] rounded-br-[4px] bg-primary-soft'
             : 'rounded-[14px] rounded-bl-[4px] border border-line-strong bg-surface-2',
+          activeMatch && 'ring-2 ring-warning ring-offset-2 ring-offset-bg',
         )}
       >
         {showSender && !isOutbound && msg.sender_name && (
           <span className="text-[11.5px] font-semibold text-primary">{msg.sender_name}</span>
         )}
         {hasMediaFile && <BubbleMedia message={msg} />}
-        {hasBody && <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed">{msg.body}</p>}
+        {hasBody && (
+          <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed">
+            <HighlightText text={msg.body ?? ''} term={findTerm} whole />
+          </p>
+        )}
         {(msg.message_type === 'ptt' || msg.message_type === 'audio') && (
-          <TranscriptBlock msg={msg} />
+          <TranscriptBlock msg={msg} findTerm={findTerm} />
         )}
         {isEmpty && <MessageTypeBadge messageType={msg.message_type} />}
         {hasTranslation && (
           <div className="flex items-start gap-1.5 border-t border-line-strong pt-1.5 text-[12.5px] text-fg-secondary">
             <Icon name="languages" size={13} className="mt-0.5 shrink-0 opacity-70" />
-            <span className="whitespace-pre-wrap">
-              {msg.translated_body || msg.transcript_translated}
-            </span>
+            <HighlightText
+              className="whitespace-pre-wrap"
+              text={msg.translated_body || msg.transcript_translated || ''}
+              term={findTerm}
+              whole
+            />
           </div>
         )}
         <div className="flex items-center justify-end gap-1.5 text-[10.5px] text-fg-muted">
@@ -68,6 +105,7 @@ export function MessageBubble({ message: msg, highlighted = false, showSender = 
           {isOutbound && <AckIndicator ack={msg.ack} />}
         </div>
       </div>
+      {!isOutbound && <MessageBubbleActions message={msg} align="start" />}
     </div>
   );
 }
@@ -94,11 +132,11 @@ function AckIndicator({ ack }: { ack?: number | null }) {
   );
 }
 
-function TranscriptBlock({ msg }: { msg: StoredMessage }) {
+function TranscriptBlock({ msg, findTerm }: { msg: StoredMessage; findTerm?: string }) {
   if (msg.transcript) {
     return (
       <p className="whitespace-pre-wrap text-[13px] italic leading-relaxed text-fg-secondary">
-        {msg.transcript}
+        <HighlightText text={msg.transcript} term={findTerm} whole />
       </p>
     );
   }

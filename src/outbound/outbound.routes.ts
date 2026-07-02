@@ -24,6 +24,9 @@ const limiter = rateLimit({
   limit: env.OUTBOUND_RATE_LIMIT_MAX,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
+  // Single global bucket, not per-IP: this is an account-wide safety ceiling on
+  // how fast we can send, so every caller shares the same limit.
+  keyGenerator: () => 'global',
   message: { error: 'Rate limit exceeded for outbound sending' },
 });
 

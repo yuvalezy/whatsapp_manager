@@ -23,6 +23,11 @@ export interface WhatsAppStatus {
   wid: string | null;
 }
 
+/** Auto-reconnect backoff: 5s, 10s, 20s … capped at 5 min, then give up. */
+const RECONNECT_BASE_MS = 5_000;
+const RECONNECT_MAX_MS = 5 * 60_000;
+const RECONNECT_MAX_ATTEMPTS = 8;
+
 /**
  * Owns the single whatsapp-web.js Client and all connection state.
  * The rest of the app talks to this facade, never to the SDK directly.
@@ -34,6 +39,13 @@ class WhatsAppService {
   private qrGeneratedAt: Date | null = null;
   private readyAt: Date | null = null;
   private info: { pushname?: string; wid?: string } = {};
+  private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True while a reconnect is actually running, so a second `disconnected`
+   * fired inside the `initialize()` window can't stack a concurrent teardown. */
+  private reconnecting = false;
+  /** Set once `destroy()` runs (app shutdown) so no reconnect fires afterwards. */
+  private stopped = false;
 
   getClient(): Client | null {
     return this.client;
@@ -66,6 +78,9 @@ class WhatsAppService {
     this.readyAt = new Date();
     this.info = info;
     this.lastQr = null;
+    // Recovered — reset the backoff and cancel any pending reconnect.
+    this.reconnectAttempts = 0;
+    this.clearReconnectTimer();
   }
 
   status(): WhatsAppStatus {
@@ -113,7 +128,78 @@ class WhatsAppService {
     await this.client.initialize();
   }
 
+  /**
+   * Schedule a reconnect after a `disconnected` event. Capped exponential
+   * backoff; gives up after RECONNECT_MAX_ATTEMPTS so a permanently-dead link
+   * can't spin forever. A LOGOUT (device unlinked) is terminal — reconnecting
+   * would just loop on a fresh QR, so it's left DISCONNECTED for a manual
+   * re-link. Idempotent: a pending timer isn't rescheduled.
+   */
+  scheduleReconnect(reason: string): void {
+    if (this.stopped) return;
+    if (reason === 'LOGOUT') {
+      logger.warn('WhatsApp logged out (device unlinked) — not auto-reconnecting; re-link required');
+      return;
+    }
+    if (this.reconnectTimer) return; // already scheduled
+    if (this.reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
+      logger.error(
+        { attempts: this.reconnectAttempts },
+        'WhatsApp reconnect gave up after max attempts — manual restart required',
+      );
+      return;
+    }
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** this.reconnectAttempts, RECONNECT_MAX_MS);
+    this.reconnectAttempts += 1;
+    logger.warn(
+      { reason, attempt: this.reconnectAttempts, delayMs: delay },
+      'Scheduling WhatsApp reconnect',
+    );
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.reconnect();
+    }, delay);
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  /** Tear down the dead client and start a fresh session (LocalAuth restores it). */
+  private async reconnect(): Promise<void> {
+    if (this.stopped || this.reconnecting) return;
+    this.reconnecting = true;
+    logger.info({ attempt: this.reconnectAttempts }, 'Reconnecting WhatsApp client…');
+    this.state = 'INITIALIZING';
+    try {
+      await this.teardownClient();
+      await this.initialize();
+    } catch (err) {
+      logger.error({ err }, 'WhatsApp reconnect failed to initialize; will retry');
+      this.scheduleReconnect('reconnect-error');
+    } finally {
+      this.reconnecting = false;
+    }
+  }
+
+  /** Best-effort teardown that never throws (the browser may already be gone). */
+  private async teardownClient(): Promise<void> {
+    if (!this.client) return;
+    try {
+      await this.client.destroy();
+    } catch (err) {
+      logger.warn({ err }, 'Error tearing down WhatsApp client before reconnect (ignored)');
+    } finally {
+      this.client = null;
+    }
+  }
+
   async destroy(): Promise<void> {
+    this.stopped = true;
+    this.clearReconnectTimer();
     if (this.client) {
       await this.client.destroy();
       this.client = null;

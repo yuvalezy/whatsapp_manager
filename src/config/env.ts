@@ -50,6 +50,16 @@ const envSchema = z.object({
   // API auth (optional)
   API_KEY: z.string().optional(),
 
+  // ── Outbound webhook (MessageRouter fan-out) ─────────────────
+  // When WEBHOOK_URL is set, every routable (whitelisted contact / monitored
+  // group) message is POSTed as JSON to it, signed with
+  //   X-Signature: sha256=HMAC-SHA256(rawBody, WEBHOOK_SECRET)
+  // when WEBHOOK_SECRET is present. Delivery is best-effort and never blocks or
+  // breaks persistence (see webhook-message-router.ts).
+  WEBHOOK_URL: z.string().url().optional(),
+  WEBHOOK_SECRET: z.string().optional(),
+  WEBHOOK_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+
   // ── Encrypted credentials store ──────────────────────────────
   // Master key for AES-256-GCM at-rest encryption of provider API keys.
   // base64 32 bytes: `openssl rand -base64 32`. Unset ⇒ store disabled.

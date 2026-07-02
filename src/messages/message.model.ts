@@ -1,7 +1,7 @@
 export type MessageDirection = 'inbound' | 'outbound';
 
 export type MediaStatus = 'none' | 'pending' | 'downloaded' | 'failed' | 'expired';
-export type TranscriptionStatus = 'none' | 'pending' | 'done' | 'failed';
+export type TranscriptionStatus = 'none' | 'pending' | 'processing' | 'done' | 'failed';
 export type TranslationStatus = 'none' | 'pending' | 'done' | 'failed' | 'skipped';
 
 /** A downloaded attachment, as produced by the media service. */
@@ -34,6 +34,8 @@ export interface RoutableMessage {
   metadata?: Record<string, unknown>;
   /** WhatsApp delivery ack (outbound): -1 error, 1 sent, 2 delivered, 3 read, 4 played. */
   ack?: number | null;
+  /** message_id of the message this one quotes/replies to, if any. */
+  replyToMessageId?: string | null;
 }
 
 /** Row shape as returned from the `messages` table. */
@@ -49,6 +51,7 @@ export interface StoredMessage {
   direction: MessageDirection;
   timestamp: string;
   created_at: string;
+  updated_at: string;
 
   detected_language: string | null;
 
@@ -68,6 +71,14 @@ export interface StoredMessage {
 
   /** WhatsApp delivery ack (outbound): -1 error, 1 sent, 2 delivered, 3 read, 4 played. */
   ack: number | null;
+
+  /** message_id this message quotes/replies to, if any. */
+  reply_to_message_id: string | null;
+  /** Set when the message body was edited in place (WhatsApp "edit message"). */
+  edited_at: string | null;
+  /** Soft-delete: true once the sender revoked ("delete for everyone") the message. */
+  is_deleted: boolean;
+  deleted_at: string | null;
 }
 
 /** Minimal projection used by the transcription worker. */

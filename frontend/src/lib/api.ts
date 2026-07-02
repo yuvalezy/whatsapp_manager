@@ -24,6 +24,10 @@ import type {
   GroupEntry,
   GroupEzyLinkInput,
   HealthData,
+  MessageSearchResult,
+  MessageStats,
+  Paging,
+  PreferredLanguage,
   QrData,
   StatusData,
   StoredMessage,
@@ -49,10 +53,13 @@ export class ApiError extends Error {
 
 interface Envelope<T> {
   data: T;
-  paging?: { limit: number; offset: number };
+  paging?: Paging;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** Perform the fetch + shared error handling, returning the parsed JSON payload
+ *  (the whole envelope, incl. `paging`). Callers that only want `data` use
+ *  `request`; callers that need `paging.total` use this directly. */
+async function requestRaw(path: string, init?: RequestInit): Promise<unknown> {
   const headers = new Headers(init?.headers);
   if (init?.body) headers.set('Content-Type', 'application/json');
   if (API_KEY) headers.set('x-api-key', API_KEY);
@@ -78,6 +85,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(message, res.status);
   }
 
+  return payload;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const payload = await requestRaw(path, init);
   // Backend wraps most payloads in { data }. /health is bare.
   if (payload && typeof payload === 'object' && 'data' in payload) {
     return (payload as Envelope<T>).data;
@@ -99,6 +111,15 @@ export const api = {
   removeWhitelist: (number: string) =>
     request<{ removed: boolean }>(`/whitelist/${encodeURIComponent(number)}`, {
       method: 'DELETE',
+    }),
+  // Edit an existing whitelist entry (label and/or preferred language) by id.
+  updateWhitelistEntry: (
+    id: string | number,
+    patch: { label?: string; preferred_language?: PreferredLanguage },
+  ) =>
+    request<WhitelistEntry>(`/whitelist/${encodeURIComponent(String(id))}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
     }),
   setWhitelistEzyLink: (id: string | number, link: EzyLinkInput) =>
     request<WhitelistEntry>(`/whitelist/${encodeURIComponent(String(id))}/ezy-link`, {
@@ -140,6 +161,10 @@ export const api = {
       body: JSON.stringify(link),
     }),
 
+  // Total count of captured messages (for the dashboard KPI — the recent-list
+  // fetch is capped, so its length can't be used as the real total).
+  getMessageCount: () => request<{ total: number }>('/messages/count'),
+
   listMessages: (params?: { limit?: number; offset?: number }) => {
     const q = new URLSearchParams();
     if (params?.limit != null) q.set('limit', String(params.limit));
@@ -147,14 +172,56 @@ export const api = {
     const qs = q.toString();
     return request<StoredMessage[]>(`/messages${qs ? `?${qs}` : ''}`);
   },
-  listMessagesByNumber: (number: string, params?: { limit?: number; offset?: number }) => {
+  // `before` (ISO timestamp) + `beforeId` drive drift-free keyset "load older"
+  // paging (messages strictly older than that cursor); otherwise offset paging.
+  listMessagesByNumber: (
+    number: string,
+    params?: { limit?: number; offset?: number; before?: string; beforeId?: string | number },
+  ) => {
     const q = new URLSearchParams();
     if (params?.limit != null) q.set('limit', String(params.limit));
     if (params?.offset != null) q.set('offset', String(params.offset));
+    if (params?.before != null) q.set('before', params.before);
+    if (params?.beforeId != null) q.set('beforeId', String(params.beforeId));
     const qs = q.toString();
     return request<StoredMessage[]>(
       `/messages/${encodeURIComponent(number)}${qs ? `?${qs}` : ''}`,
     );
+  },
+
+  // Full-text search across body + transcript + translated_body. Returns the
+  // page of rows AND the paging block (needs `total` for result-count paging,
+  // which `request` drops — so it reads the raw envelope).
+  searchMessages: async (params: {
+    q: string;
+    limit?: number;
+    offset?: number;
+    direction?: 'inbound' | 'outbound';
+    type?: string;
+    contactNumber?: string;
+  }): Promise<MessageSearchResult> => {
+    const qs = new URLSearchParams({ q: params.q });
+    if (params.limit != null) qs.set('limit', String(params.limit));
+    if (params.offset != null) qs.set('offset', String(params.offset));
+    if (params.direction) qs.set('direction', params.direction);
+    if (params.type) qs.set('type', params.type);
+    if (params.contactNumber) qs.set('contactNumber', params.contactNumber);
+    const payload = (await requestRaw(`/messages/search?${qs.toString()}`)) as {
+      data: StoredMessage[];
+      paging: Paging;
+    };
+    return { rows: payload.data, paging: payload.paging };
+  },
+
+  // Aggregate message statistics for the Insights page.
+  getStats: () => request<MessageStats>('/messages/stats'),
+
+  // Streaming file download of a contact's whole thread. Usable as an <a href>
+  // — carries the API key as a query param since navigations can't set headers.
+  exportUrl: (number: string, format: 'json' | 'csv') => {
+    const qs = new URLSearchParams({ number, format });
+    if (API_KEY) qs.set('api_key', API_KEY);
+    return `${BASE}/messages/export?${qs.toString()}`;
   },
 
   // On-demand translation (body + transcript → English) via the backend/DeepSeek.
