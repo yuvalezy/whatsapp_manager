@@ -121,9 +121,10 @@ Key structural conventions:
 - **API cost tracking** (`costs/`): one `api_costs` row per OpenAI transcription call and
   per DeepSeek translation call (translating both body + transcript on one message is two
   rows). Pricing is computed from the `OPENAI_TRANSCRIBE_COST_PER_MINUTE` /
-  `DEEPSEEK_*_COST_PER_1M_TOKENS` env vars — **these are placeholder estimates**; verify
-  against each provider's current pricing page. A rate change only affects calls recorded
-  after the change. `gpt-4o-transcribe` rejects `response_format: verbose_json` (only
+  `DEEPSEEK_*_COST_PER_1M_TOKENS` env vars, verified against provider docs as of
+  2026-07-02 — **providers change pricing without notice**, so re-verify periodically.
+  A rate change only affects calls recorded after the change. `gpt-4o-transcribe` rejects
+  `response_format: verbose_json` (only
   `whisper-1` supports it), so OpenAI audio duration is *estimated* from file size
   (~16kbps mono Opus, matching WhatsApp's voice-note encoding) rather than read from the
   API response — see `transcription.service.ts`. Surfaced via `GET /costs/summary`

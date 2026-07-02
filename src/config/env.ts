@@ -63,8 +63,10 @@ const envSchema = z.object({
   DEEPSEEK_BASE_URL: z.string().default('https://api.deepseek.com'),
 
   // Models. TRANSLATION_MODEL is the exact DeepSeek API model string.
+  // deepseek-chat is deprecated 2026-07-24 (no grace period); deepseek-v4-flash
+  // is its direct non-thinking-mode replacement, same cost tier.
   TRANSCRIPTION_MODEL: z.string().default('gpt-4o-transcribe'),
-  TRANSLATION_MODEL: z.string().default('deepseek-chat'),
+  TRANSLATION_MODEL: z.string().default('deepseek-v4-flash'),
   TARGET_LANGUAGE: z.string().default('en'),
 
   // ── Media archival ───────────────────────────────────────────
@@ -81,11 +83,15 @@ const envSchema = z.object({
   BACKFILL_LIMIT_PER_CHAT: z.coerce.number().int().nonnegative().default(1000),
 
   // ── API cost tracking ─────────────────────────────────────────
-  // Placeholder rates — verify against each provider's current pricing page
-  // and override here; costs recorded before a correction are NOT rewritten.
+  // Rates verified against provider docs as of 2026-07-02 (openai.com/api/pricing,
+  // api-docs.deepseek.com/quick_start/pricing) — providers change pricing without
+  // notice, so re-verify periodically and override here. Costs recorded before a
+  // correction are NOT rewritten. DeepSeek input rate uses the standard (cache-miss)
+  // price — cache-hit tokens aren't tracked separately, so this is a conservative
+  // (upper-bound) estimate for input cost.
   OPENAI_TRANSCRIBE_COST_PER_MINUTE: z.coerce.number().nonnegative().default(0.006),
-  DEEPSEEK_INPUT_COST_PER_1M_TOKENS: z.coerce.number().nonnegative().default(0.27),
-  DEEPSEEK_OUTPUT_COST_PER_1M_TOKENS: z.coerce.number().nonnegative().default(1.1),
+  DEEPSEEK_INPUT_COST_PER_1M_TOKENS: z.coerce.number().nonnegative().default(0.14),
+  DEEPSEEK_OUTPUT_COST_PER_1M_TOKENS: z.coerce.number().nonnegative().default(0.28),
 });
 
 const parsed = envSchema.safeParse(process.env);
