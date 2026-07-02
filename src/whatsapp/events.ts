@@ -5,7 +5,8 @@ import { printQrToTerminal } from './qr';
 import { whitelistService } from '../whitelist/whitelist.service';
 import { ignoredStats } from '../messages/ignored-stats';
 import { MessageRouter } from '../router/message-router';
-import { buildRoutable, contactNumberOf } from './message-mapper';
+import { buildRoutable, contactJidOf } from './message-mapper';
+import { resolveContactNumber } from './lid-resolver';
 import { backfillService } from '../backfill/backfill.service';
 import { sseManager } from '../sse';
 import { buildStatusData } from '../whatsapp/whatsapp.routes';
@@ -75,7 +76,7 @@ export function registerEvents(
   // can capture the full two-sided thread (the plain `message` event suppresses
   // our own sends). Direction is derived from `message.id.fromMe`.
   client.on('message_create', (message: Message) => {
-    handleMessage(service, message, router).catch((err) => {
+    handleMessage(service, client, message, router).catch((err) => {
       logger.error({ err }, 'Error handling message');
     });
   });
@@ -88,6 +89,7 @@ export function registerEvents(
  */
 async function handleMessage(
   service: WhatsAppService,
+  client: Client,
   message: Message,
   router: MessageRouter,
 ): Promise<void> {
@@ -104,13 +106,15 @@ async function handleMessage(
     return;
   }
 
-  const contactNumber = contactNumberOf(message);
+  // LID-addressed chats normalize to opaque digits that never match the
+  // whitelist — resolve to the real phone number BEFORE the policy check.
+  const contactNumber = await resolveContactNumber(client, contactJidOf(message));
   if (!whitelistService.isWhitelisted(contactNumber)) {
     // Count inbound noise; drop our own outbound to non-whitelisted silently.
     if (!fromMe) ignoredStats.increment('not_whitelisted');
     return;
   }
 
-  const routable = await buildRoutable(message, service.getOwnNumber());
+  const routable = await buildRoutable(message, service.getOwnNumber(), contactNumber);
   await router.route(routable);
 }

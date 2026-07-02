@@ -11,21 +11,37 @@ import { RoutableMessage } from '../messages/message.model';
  * identical rows. The whitelist/ignored POLICY stays in events.ts.
  */
 
-/** The other party of the thread (normalized): fromMe ? recipient : sender. */
-export function contactNumberOf(message: Message): string {
+/** The other party's raw jid (may be `@c.us` or a privacy `@lid`). */
+export function contactJidOf(message: Message): string {
   const isGroup = (message.from ?? '').endsWith('@g.us');
   const raw = message.id.fromMe
     ? message.to
     : isGroup
       ? (message.author ?? message.from)
       : message.from;
-  return normalizeNumber(raw ?? '');
+  return raw ?? '';
 }
 
-export async function buildRoutable(message: Message, ownNumber: string): Promise<RoutableMessage> {
+/** The other party of the thread (normalized): fromMe ? recipient : sender. */
+export function contactNumberOf(message: Message): string {
+  return normalizeNumber(contactJidOf(message));
+}
+
+/**
+ * `contactNumberOverride` pins the thread key when the caller already knows the
+ * real phone number — required whenever the chat is LID-addressed (live
+ * ingestion resolves it via lid-resolver; backfill/outbound know the number
+ * upfront). It also keys the media folder, so it must be applied here rather
+ * than patched onto the result.
+ */
+export async function buildRoutable(
+  message: Message,
+  ownNumber: string,
+  contactNumberOverride?: string,
+): Promise<RoutableMessage> {
   const fromMe = message.id.fromMe;
   const isGroup = (message.from ?? '').endsWith('@g.us');
-  const contactNumber = contactNumberOf(message);
+  const contactNumber = contactNumberOverride || contactNumberOf(message);
   const chatId = (fromMe ? message.to : message.from) ?? '';
   const body = message.body ?? '';
 

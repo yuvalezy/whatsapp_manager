@@ -85,8 +85,8 @@ class BackfillService {
 
       this.status.processed += 1;
       try {
-        const routable = await buildRoutable(message, ownNumber);
-        routable.contactNumber = number; // pin to the chat we're backfilling
+        // Pin to the chat we're backfilling (fetched messages may be LID-addressed).
+        const routable = await buildRoutable(message, ownNumber, number);
         const inserted = await messageService.save(routable);
         if (inserted) {
           saved += 1;

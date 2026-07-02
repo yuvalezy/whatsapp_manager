@@ -159,16 +159,18 @@ Key structural conventions:
   events, not the initialize promise.
 - **Outbound is triple-gated:** disabled unless `ENABLE_OUTBOUND=true`, then
   rate-limited, single-recipient, and recipient-must-be-whitelisted. Keep it that way.
-- **KNOWN GAP — LID vs. real number on live ingestion:** `message-mapper.ts`'s
-  `contactNumberOf()` normalizes `message.from`/`message.to` directly. For contacts
-  whose chats are privacy-LID-addressed (common — see `GET /contacts` above), this can
-  return the opaque LID digits instead of the real phone number for messages that
-  aren't resolved elsewhere. Currently masked for whitelisted contacts because
-  `backfillService.backfillNumber()` force-pins `routable.contactNumber` to the known
-  whitelist number, and `catchUpAll()` runs on every reconnect — but a *brand-new*
-  whitelist add's very first live-received message (before any backfill/catch-up runs)
-  could land with the wrong `contact_number`. Not yet fixed; `GET /contacts`'s
-  `getContactLidAndPhone()` approach is the template for a proper fix.
+- **LID vs. real number on live ingestion (fixed 2026-07-02):** for contacts whose
+  chats are privacy-LID-addressed (common — see `GET /contacts` above), `message.from`/
+  `message.to` normalize to opaque LID digits that never match the whitelist, so live
+  messages used to be silently dropped (only backfill/catch-up captured those threads).
+  `whatsapp/lid-resolver.ts` now resolves `@lid` jids to real numbers via
+  `getContactLidAndPhone()` (in-memory cached, one lookup per unique LID) *before* the
+  whitelist check in `events.ts`, and the resolved number is pinned into `buildRoutable`
+  (third param) so both the row's `contact_number` and the media folder are keyed by the
+  real number. Backfill and `POST /outbound/send` pass the already-known number through
+  the same param (`sent.to` can come back LID-addressed even when sending to `@c.us`).
+  If resolution fails, the message falls back to LID digits → treated as
+  non-whitelisted, same as before the fix.
 
 ## Frontend architecture
 

@@ -61,7 +61,9 @@ outboundRouter.post('/send', limiter, async (req, res, next) => {
     const sent = await client.sendMessage(toChatId(phone), String(message));
     logger.warn({ to: phone, messageId: sent.id._serialized }, 'OUTBOUND message sent');
 
-    const routable = await buildRoutable(sent, whatsappService.getOwnNumber());
+    // Pin the thread key: `sent.to` can come back LID-addressed even when we
+    // sent to the @c.us chat id, and the recipient number is already known.
+    const routable = await buildRoutable(sent, whatsappService.getOwnNumber(), phone);
     await messageService.save(routable).catch((err) =>
       logger.error({ err, messageId: sent.id._serialized }, 'Failed to persist own outbound message'),
     );
