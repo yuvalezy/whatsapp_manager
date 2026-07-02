@@ -429,7 +429,17 @@ export function ConversationsPage() {
                     icon="download"
                     size="sm"
                     label="Export"
-                    onClick={() => window.open(api.exportUrl(selected, 'csv'), '_blank')}
+                    onClick={() => {
+                      // Trigger a real file download in place — an <a download>
+                      // click, not window.open (which just opens a stray tab and
+                      // navigates instead of saving the attachment).
+                      const a = document.createElement('a');
+                      a.href = api.exportUrl(selected, 'csv');
+                      a.download = ''; // honor the server's Content-Disposition filename
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                    }}
                   />
                   <Button
                     variant="secondary"
