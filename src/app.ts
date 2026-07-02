@@ -54,6 +54,7 @@ function buildApp() {
         'GET /health',
         'GET /qr',
         'GET /status',
+        'GET /contacts',
         'GET /whitelist',
         'POST /whitelist',
         'DELETE /whitelist/:number',

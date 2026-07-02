@@ -20,6 +20,7 @@ import type {
   StatusData,
   StoredMessage,
   TranslateAllResult,
+  WhatsAppContact,
   WhitelistEntry,
 } from '@/types';
 
@@ -89,6 +90,9 @@ export const api = {
     request<{ removed: boolean }>(`/whitelist/${encodeURIComponent(number)}`, {
       method: 'DELETE',
     }),
+
+  // Real WhatsApp contacts from the linked account (for the "browse contacts" picker).
+  listContacts: () => request<WhatsAppContact[]>('/contacts'),
 
   listMessages: (params?: { limit?: number; offset?: number }) => {
     const q = new URLSearchParams();

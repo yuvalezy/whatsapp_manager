@@ -60,6 +60,13 @@ export interface WhitelistEntry {
   created_at: string;
 }
 
+export interface WhatsAppContact {
+  number: string;
+  name: string;
+  lastActivity: string | null;
+  whitelisted: boolean;
+}
+
 export type MediaStatus = 'none' | 'pending' | 'downloaded' | 'failed' | 'expired';
 export type TranscriptionStatus = 'none' | 'pending' | 'done' | 'failed';
 export type TranslationStatus = 'none' | 'pending' | 'done' | 'failed' | 'skipped';

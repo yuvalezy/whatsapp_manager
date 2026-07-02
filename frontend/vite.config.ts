@@ -16,6 +16,7 @@ const API_PREFIXES = [
   '/credentials',
   '/backfill',
   '/costs',
+  '/contacts',
 ];
 
 export default defineConfig({

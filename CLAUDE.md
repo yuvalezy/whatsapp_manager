@@ -129,6 +129,13 @@ Key structural conventions:
   (~16kbps mono Opus, matching WhatsApp's voice-note encoding) rather than read from the
   API response — see `transcription.service.ts`. Surfaced via `GET /costs/summary`
   (dashboard KPI + Costs page) and `GET /costs`/`GET /costs/daily`.
+- **`GET /contacts`** (whitelist "browse contacts" picker): uses `client.getChats()`,
+  not `getContacts()` — the latter is the entire synced phone book (thousands of rows,
+  each duplicated once per phone number and once per privacy LID). **Most active chats
+  are LID-addressed** (`chat.id.server === 'lid'`, `chat.id.user` is an opaque id, not a
+  phone number) — real numbers are resolved in one batched call via
+  `client.getContactLidAndPhone()`. This LID-vs-real-number gap also affects
+  `message-mapper.ts`'s `contactNumberOf()` on the live ingestion path (see below).
 - SQL for the new `messages` columns still lives only in `message.service.ts`; the
   `credentials` table SQL lives only in `credentials.service.ts`. Keep that boundary.
 
@@ -152,6 +159,16 @@ Key structural conventions:
   events, not the initialize promise.
 - **Outbound is triple-gated:** disabled unless `ENABLE_OUTBOUND=true`, then
   rate-limited, single-recipient, and recipient-must-be-whitelisted. Keep it that way.
+- **KNOWN GAP — LID vs. real number on live ingestion:** `message-mapper.ts`'s
+  `contactNumberOf()` normalizes `message.from`/`message.to` directly. For contacts
+  whose chats are privacy-LID-addressed (common — see `GET /contacts` above), this can
+  return the opaque LID digits instead of the real phone number for messages that
+  aren't resolved elsewhere. Currently masked for whitelisted contacts because
+  `backfillService.backfillNumber()` force-pins `routable.contactNumber` to the known
+  whitelist number, and `catchUpAll()` runs on every reconnect — but a *brand-new*
+  whitelist add's very first live-received message (before any backfill/catch-up runs)
+  could land with the wrong `contact_number`. Not yet fixed; `GET /contacts`'s
+  `getContactLidAndPhone()` approach is the template for a proper fix.
 
 ## Frontend architecture
 

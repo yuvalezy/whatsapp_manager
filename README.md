@@ -13,7 +13,8 @@ is **off by default**.
 
 - 🔐 **QR login** — shown in the terminal *and* at `http://localhost:3000/qr`.
 - 💾 **Session persistence** — scan once; the session is reused across restarts.
-- ✅ **Whitelist** — only messages from allowed numbers are stored. Managed via REST.
+- ✅ **Whitelist** — only messages from allowed numbers are stored. Managed via REST, or
+  browse real WhatsApp conversations and check-select several at once (`GET /contacts`).
 - 📥 **Full two-sided capture** — inbound *and* your own outbound messages to whitelisted
   contacts, keyed by contact for a complete thread. Non-whitelisted traffic is only counted.
 - 🕓 **History backfill** — pull past conversation history per contact (with an optional
@@ -135,6 +136,7 @@ they only bump the `ignored` counters visible in `/status`.
 | `GET /health`              | Liveness probe (always public).                        |
 | `GET /qr`                  | QR login page (HTML). `?format=json` for raw QR/data URL. |
 | `GET /status`              | Connection state, whitelist size, ignored counters.    |
+| `GET /contacts`            | Real WhatsApp conversations, flagged whitelisted/not — for the picker. |
 | `GET /whitelist`           | List allowed numbers.                                  |
 | `POST /whitelist`          | Add `{ "number": "...", "label": "..." }`.             |
 | `DELETE /whitelist/:number`| Remove a number.                                       |
