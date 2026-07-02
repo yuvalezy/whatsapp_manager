@@ -3,11 +3,19 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { formatPhone, normalizeNumber } from '@/lib/format';
 import { showNotification } from '@/hooks/useNotifications';
+import { getToken } from '@/lib/auth';
 import type { ConversationThread, StatusData, StoredMessage } from '@/types';
 
 const BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 const API_KEY = import.meta.env.VITE_API_KEY ?? '';
-const EVENTS_URL = `${BASE}/events${API_KEY ? `?api_key=${encodeURIComponent(API_KEY)}` : ''}`;
+
+// EventSource can't set headers, so the credential rides as a query param. The
+// JWT (personal login) takes precedence over the optional API-key fallback.
+function eventsUrl(): string {
+  const token = getToken();
+  if (token) return `${BASE}/events?access_token=${encodeURIComponent(token)}`;
+  return `${BASE}/events${API_KEY ? `?api_key=${encodeURIComponent(API_KEY)}` : ''}`;
+}
 
 const TYPE_PREVIEW: Record<string, string> = {
   image: '📷 Photo',
@@ -37,7 +45,7 @@ export function useSse() {
   }, [searchParams]);
 
   useEffect(() => {
-    const es = new EventSource(EVENTS_URL);
+    const es = new EventSource(eventsUrl());
 
     es.addEventListener('message', (e: MessageEvent) => {
       try {

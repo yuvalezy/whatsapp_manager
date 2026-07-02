@@ -11,6 +11,7 @@
     "start": "node dist/app.js",
     "dev": "tsx watch src/app.ts",
     "migrate": "tsx src/db/migrate.ts",
+    "hash-password": "tsx scripts/hash-password.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -34,7 +34,14 @@ services:
       PGPASSWORD: postgres
       PGDATABASE: whatsapp_manager
       ENABLE_OUTBOUND: "false"
-      # API_KEY: "change-me" # uncomment to require x-api-key on the REST API
+      # ── Authentication (optional) ──────────────────────────
+      # Personal login (forever-JWT). Generate the hash on the host with:
+      #   npm run hash-password -- "your password"
+      # JWT_SECRET: "<openssl rand -base64 32>"
+      # AUTH_USERNAME: "yourname"
+      # AUTH_PASSWORD_HASH: "scrypt$...$..."
+      # External API key — read-only when a personal login is set above.
+      # API_KEY: "change-me" # sent as x-api-key (or ?api_key=)
       # ── Enrichment (optional) ──────────────────────────────
       MEDIA_STORAGE_PATH: /app/media
       ENABLE_TRANSCRIPTION: "false"

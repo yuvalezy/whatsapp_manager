@@ -16,6 +16,7 @@ import { fileURLToPath, URL } from 'node:url';
 // so that's the signal we use to tell the two apart.
 const API_TARGET = process.env.VITE_API_TARGET || 'http://localhost:3000';
 const API_PREFIXES = [
+  '/auth',
   '/status',
   '/qr',
   '/whitelist',

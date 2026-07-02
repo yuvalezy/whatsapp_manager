@@ -16,6 +16,8 @@ import { credentialsService } from './credentials/credentials.service';
 import { backfillRouter } from './backfill/backfill.routes';
 import { costsRouter } from './costs/cost.routes';
 import { ezyPortalRouter } from './ezy-portal/ezy-portal.routes';
+import { authRouter } from './auth/auth.routes';
+import { authGuard } from './auth/auth.middleware';
 import { runTranscriptionPass } from './enrichment/worker';
 import { whatsappService } from './whatsapp/client';
 import { ignoredStats } from './messages/ignored-stats';
@@ -24,20 +26,6 @@ import { sseManager } from './sse';
 import { buildStatusData } from './whatsapp/whatsapp.routes';
 
 const IGNORED_FLUSH_INTERVAL_MS = 30_000;
-
-/** Optional shared-secret guard. Disabled when API_KEY is unset. */
-function apiKeyGuard(req: Request, res: Response, next: NextFunction): void {
-  if (!env.API_KEY) {
-    next();
-    return;
-  }
-  const provided = req.headers['x-api-key'] ?? req.query.api_key;
-  if (provided === env.API_KEY) {
-    next();
-    return;
-  }
-  res.status(401).json({ error: 'Unauthorized' });
-}
 
 function buildApp() {
   const app = express();
@@ -72,14 +60,32 @@ function buildApp() {
     });
   });
 
-  // Everything below may require the API key (if configured).
-  app.use(apiKeyGuard);
+  // Public: personal login (issues a forever-JWT). Rate-limited inside the router.
+  app.use('/auth', authRouter);
+
+  // Everything below requires a credential when auth is configured:
+  //   • personal JWT (Bearer / ?access_token=) → full access
+  //   • external API_KEY (x-api-key / ?api_key=) → read-only (GET)
+  app.use(authGuard);
+
+  // Confirm the caller's token is still valid (used by the frontend on boot).
+  app.get('/auth/me', (req, res) => {
+    res.json({
+      data: {
+        authenticated: true,
+        kind: req.auth?.kind ?? 'user',
+        username: req.auth?.sub ?? null,
+      },
+    });
+  });
 
   app.get('/', (_req, res) => {
     res.json({
       service: 'whatsapp-manager',
       endpoints: [
         'GET /health',
+        'POST /auth/login',
+        'GET /auth/me',
         'GET /qr',
         'GET /status',
         'GET /contacts',

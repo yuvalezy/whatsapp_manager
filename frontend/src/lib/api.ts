@@ -3,11 +3,15 @@
 //
 // In dev, Vite proxies /status, /qr, /whitelist, /messages, /outbound, /health
 // to the Express server (see vite.config.ts), so the default base is same-origin.
-// Set VITE_API_BASE to point at an absolute backend URL instead.
-// Set VITE_API_KEY if the backend has API_KEY configured (sent as x-api-key).
+// Auth: the personal-login JWT (see lib/auth.ts) is sent as `Authorization:
+// Bearer`, and as `?access_token=` on element/navigation URLs (media, export,
+// SSE) that can't set headers. VITE_API_KEY is an optional fallback (read-only
+// external key) sent as `x-api-key`.
 // ============================================================================
 
+import { clearToken, emitUnauthorized, getToken } from '@/lib/auth';
 import type {
+  AuthMe,
   BackfillStatus,
   ConversationThread,
   CostEntry,
@@ -62,6 +66,8 @@ interface Envelope<T> {
 async function requestRaw(path: string, init?: RequestInit): Promise<unknown> {
   const headers = new Headers(init?.headers);
   if (init?.body) headers.set('Content-Type', 'application/json');
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
   if (API_KEY) headers.set('x-api-key', API_KEY);
 
   let res: Response;
@@ -78,6 +84,12 @@ async function requestRaw(path: string, init?: RequestInit): Promise<unknown> {
   const payload = isJson ? await res.json().catch(() => null) : null;
 
   if (!res.ok) {
+    // A rejected credential drops our token and signals the app to show login.
+    // The login request itself 401s on bad credentials — don't self-evict there.
+    if (res.status === 401 && path !== '/auth/login') {
+      clearToken();
+      emitUnauthorized();
+    }
     const message =
       (payload && typeof payload === 'object' && 'error' in payload
         ? String((payload as { error: unknown }).error)
@@ -98,6 +110,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // Auth — personal login (forever-JWT) + token validation.
+  login: (username: string, password: string) =>
+    request<{ token: string; username: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  me: () => request<AuthMe>('/auth/me'),
+
   health: () => request<HealthData>('/health'),
   status: () => request<StatusData>('/status'),
   qr: () => request<QrData>('/qr?format=json'),
@@ -217,10 +237,13 @@ export const api = {
   getStats: () => request<MessageStats>('/messages/stats'),
 
   // Streaming file download of a contact's whole thread. Usable as an <a href>
-  // — carries the API key as a query param since navigations can't set headers.
+  // — carries the JWT as `?access_token=` since navigations can't set headers
+  // (falls back to the API key when that's the configured credential).
   exportUrl: (number: string, format: 'json' | 'csv') => {
     const qs = new URLSearchParams({ number, format });
-    if (API_KEY) qs.set('api_key', API_KEY);
+    const token = getToken();
+    if (token) qs.set('access_token', token);
+    else if (API_KEY) qs.set('api_key', API_KEY);
     return `${BASE}/messages/export?${qs.toString()}`;
   },
 
@@ -256,9 +279,12 @@ export const api = {
     }),
 
   // Absolute URL for a message's downloaded attachment. Usable as an <img>/<audio>
-  // src — carries the API key as a query param since element requests can't set headers.
+  // src — carries the JWT as `?access_token=` since element requests can't set
+  // headers (falls back to the API key when that's the configured credential).
   mediaUrl: (id: string | number) => {
     const path = `${BASE}/messages/${encodeURIComponent(String(id))}/media`;
+    const token = getToken();
+    if (token) return `${path}?access_token=${encodeURIComponent(token)}`;
     return API_KEY ? `${path}?api_key=${encodeURIComponent(API_KEY)}` : path;
   },
 

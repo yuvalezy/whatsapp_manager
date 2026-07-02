@@ -9,6 +9,11 @@ is **off by default**.
 > scraping, mass messaging, or marketing. Outbound is disabled unless you
 > explicitly turn it on.
 
+> 📘 **Setting up on a new machine?** Start with
+> [`docs/setup.md`](./docs/setup.md) — a full install walkthrough (database,
+> `.env`, **authentication**, first run, Docker). Auth deep-dive:
+> [`docs/authentication.md`](./docs/authentication.md).
+
 ## Features
 
 - 🔐 **QR login** — shown in the terminal *and* at `http://localhost:3000/qr`.
@@ -157,10 +162,26 @@ they only bump the `ignored` counters visible in `/status`.
 | `GET /costs`               | Recent individual cost entries (`?limit=100`).         |
 | `POST /outbound/send`      | **Disabled by default.** Guarded, rate-limited scaffold. |
 
-### Optional API key
+### Authentication
 
-Set `API_KEY` in `.env` to require `x-api-key: <key>` (or `?api_key=<key>`) on
-every endpoint except `/health`.
+Two independent credentials, off by default:
+
+1. **Personal login** (browser UI) — set `JWT_SECRET`, `AUTH_USERNAME`, and
+   `AUTH_PASSWORD_HASH` to require a login. Generate the hash with
+   `npm run hash-password -- "your password"`. `POST /auth/login` returns a
+   **forever-JWT** (no expiry) sent as `Authorization: Bearer <jwt>` — so you log
+   in once per browser and stay in until you log out or rotate `JWT_SECRET`.
+   Element/navigation/SSE URLs (media, export, `/events`) carry it as
+   `?access_token=<jwt>`. When `JWT_SECRET` is set, auth is enforced on every
+   endpoint except `/health` and `POST /auth/login`.
+2. **External API key** — set `API_KEY`, sent as `x-api-key: <key>` (or
+   `?api_key=<key>`). When a personal login is configured, the API key is
+   **read-only** (GET endpoints only; writes return `403`) — for an outside agent
+   that reads the surface but can't send outbound, edit the whitelist/groups, run
+   backfill, or touch credentials. With `JWT_SECRET` empty, `API_KEY` is the sole
+   credential and grants full access (backward-compatible).
+
+Leave all of the above empty for open local use.
 
 ## Configuration
 
@@ -171,7 +192,9 @@ See [`.env.example`](./.env.example). Key flags:
 | `ENABLE_OUTBOUND`   | `false`            | Master switch for any sending. Keep off.         |
 | `MONITOR_GROUPS`    | `false`            | Also process group chats (matched by sender).    |
 | `SESSION_DATA_PATH` | `./.wwebjs_auth`   | Where the WhatsApp session is persisted.         |
-| `API_KEY`           | *(empty)*          | If set, protects the REST API.                   |
+| `JWT_SECRET`        | *(empty)*          | Enables personal login (forever-JWT) when set.   |
+| `AUTH_USERNAME` / `AUTH_PASSWORD_HASH` | *(empty)* | Personal login creds (`npm run hash-password`). |
+| `API_KEY`           | *(empty)*          | External key. Read-only when a personal login exists. |
 | `OUTBOUND_RATE_LIMIT_MAX` | `10`         | Max outbound calls per window (future use).      |
 | `CREDENTIALS_ENCRYPTION_KEY` | *(empty)* | Master key for the encrypted credentials store (`openssl rand -base64 32`). |
 | `ENABLE_TRANSCRIPTION` | `false`         | Auto-transcribe whitelisted audio via OpenAI.    |

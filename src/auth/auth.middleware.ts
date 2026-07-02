@@ -1,0 +1,91 @@
+import crypto from 'node:crypto';
+import type { NextFunction, Request, Response } from 'express';
+import { env } from '../config/env';
+import { isAuthConfigured, verify } from './jwt';
+
+/**
+ * The single app-wide guard. Two credentials, two capability levels:
+ *   • personal JWT  (Authorization: Bearer <jwt>  /  ?access_token=)  → full access
+ *   • external key  (x-api-key: <key>             /  ?api_key=)       → read-only (GET)
+ *
+ * The query-param variants exist because element/navigation/SSE requests
+ * (<img>, <audio>, <a download>, EventSource) can't set headers.
+ *
+ * When neither JWT_SECRET nor API_KEY is configured the API is OPEN (local dev),
+ * mirroring the previous optional guard. The API key is read-only ONLY when a
+ * personal login exists to hold full access — without one it is the sole
+ * credential and keeps full access (backward-compatible).
+ */
+
+export type AuthKind = 'user' | 'apikey';
+
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      auth?: { kind: AuthKind; sub?: string };
+    }
+  }
+}
+
+function bearerToken(req: Request): string | null {
+  const header = req.headers.authorization;
+  if (typeof header === 'string' && header.startsWith('Bearer ')) {
+    return header.slice('Bearer '.length).trim();
+  }
+  const q = req.query.access_token;
+  return typeof q === 'string' && q !== '' ? q : null;
+}
+
+function apiKey(req: Request): string | null {
+  const h = req.headers['x-api-key'];
+  if (typeof h === 'string' && h !== '') return h;
+  const q = req.query.api_key;
+  return typeof q === 'string' && q !== '' ? q : null;
+}
+
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+}
+
+function isReadMethod(method: string): boolean {
+  return method === 'GET' || method === 'HEAD';
+}
+
+export function authGuard(req: Request, res: Response, next: NextFunction): void {
+  const hasApiKey = Boolean(env.API_KEY && env.API_KEY.trim() !== '');
+
+  // Nothing configured → open (local dev).
+  if (!isAuthConfigured() && !hasApiKey) {
+    req.auth = { kind: 'user' };
+    next();
+    return;
+  }
+
+  // 1) Personal JWT → full access.
+  const token = bearerToken(req);
+  if (token) {
+    const payload = verify(token);
+    if (payload) {
+      req.auth = { kind: 'user', sub: typeof payload.sub === 'string' ? payload.sub : undefined };
+      next();
+      return;
+    }
+  }
+
+  // 2) External API key. Read-only when a personal login backstops full access.
+  const key = apiKey(req);
+  if (key && hasApiKey && timingSafeEqualStr(key, env.API_KEY as string)) {
+    if (isAuthConfigured() && !isReadMethod(req.method)) {
+      res.status(403).json({ error: 'API key is read-only' });
+      return;
+    }
+    req.auth = { kind: 'apikey' };
+    next();
+    return;
+  }
+
+  res.status(401).json({ error: 'Unauthorized' });
+}

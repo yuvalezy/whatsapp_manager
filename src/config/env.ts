@@ -47,7 +47,20 @@ const envSchema = z.object({
   OUTBOUND_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   OUTBOUND_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
 
-  // API auth (optional)
+  // ── Authentication ───────────────────────────────────────────
+  // Personal login (browser UI): a single user + scrypt password hash. When
+  // JWT_SECRET is set, auth is ENFORCED and requests need either a valid
+  // personal JWT (full access) or the external API_KEY (read-only, GET-only).
+  // When neither JWT_SECRET nor API_KEY is set the API is open (local dev),
+  // mirroring the previous optional-guard behavior. Generate the hash with
+  // `npm run hash-password -- <password>`.
+  JWT_SECRET: z.string().optional(),
+  AUTH_USERNAME: z.string().optional(),
+  AUTH_PASSWORD_HASH: z.string().optional(),
+
+  // External API key — READ-ONLY (GET only) access for an outside agent when a
+  // personal login (JWT_SECRET) is configured. Without a personal login it is
+  // the sole credential and grants full access (backward-compatible).
   API_KEY: z.string().optional(),
 
   // ── Outbound webhook (MessageRouter fan-out) ─────────────────

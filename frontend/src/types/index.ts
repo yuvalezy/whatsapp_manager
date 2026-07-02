@@ -54,6 +54,13 @@ export interface QrData {
   dataUrl: string | null;
 }
 
+// Result of GET /auth/me — confirms the current credential is still valid.
+export interface AuthMe {
+  authenticated: boolean;
+  kind: 'user' | 'apikey';
+  username: string | null;
+}
+
 export type PreferredLanguage = 'es' | 'en' | 'he';
 
 export interface WhitelistEntry {
