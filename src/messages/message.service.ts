@@ -20,7 +20,8 @@ const SELECT_COLS = `
   detected_language,
   media_type, media_path, media_mimetype, media_filesize, media_status,
   transcript, transcript_language, transcript_translated, transcription_status,
-  translated_body, translation_status
+  translated_body, translation_status,
+  ack
 `;
 
 class MessageService {
@@ -36,8 +37,8 @@ class MessageService {
          (message_id, chat_id, contact_number, sender_number, sender_name, body,
           message_type, direction, timestamp, metadata, detected_language,
           media_type, media_path, media_mimetype, media_filesize, media_status,
-          transcription_status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+          transcription_status, ack)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        ON CONFLICT (message_id) DO NOTHING`,
       [
         msg.messageId,
@@ -57,6 +58,7 @@ class MessageService {
         media?.filesize ?? null,
         media?.status ?? 'none',
         transcriptionStatus,
+        msg.ack ?? null,
       ],
     );
     const inserted = (rowCount ?? 0) > 0;
@@ -121,6 +123,20 @@ class MessageService {
     return rows;
   }
 
+  /** A thread's messages within a time window [startMs, endMs], oldest first (for summarization). */
+  async listByNumberBetween(rawNumber: string, startMs: number, endMs: number): Promise<StoredMessage[]> {
+    const number = normalizeNumber(rawNumber);
+    const { rows } = await query<StoredMessage>(
+      `SELECT ${SELECT_COLS} FROM messages
+        WHERE contact_number = $1
+          AND timestamp >= $2
+          AND timestamp <= $3
+        ORDER BY timestamp ASC`,
+      [number, new Date(startMs), new Date(endMs)],
+    );
+    return rows;
+  }
+
   async getById(id: string | number): Promise<StoredMessage | null> {
     const { rows } = await query<StoredMessage>(
       `SELECT ${SELECT_COLS} FROM messages WHERE id = $1`,
@@ -152,6 +168,56 @@ class MessageService {
        ORDER BY timestamp DESC`,
     );
     return rows;
+  }
+
+  /**
+   * Count unseen inbound messages per thread, given each thread's read watermark
+   * (null = never read → all inbound counts). Keyed by `contact_number`, which is
+   * the thread id for both 1:1 contacts and groups. Reads only the `messages`
+   * table — the cutoffs are passed in, so no cross-table read here.
+   */
+  async getUnreadCounts(
+    reads: { threadId: string; lastReadAt: string | null }[],
+  ): Promise<Map<string, number>> {
+    if (reads.length === 0) return new Map();
+    const ids = reads.map((r) => r.threadId);
+    const cutoffs = reads.map((r) => r.lastReadAt);
+    const { rows } = await query<{ contact_number: string; unread: number }>(
+      `SELECT m.contact_number, COUNT(*)::int AS unread
+         FROM messages m
+         JOIN unnest($1::text[], $2::timestamptz[]) AS r(tid, last_read)
+           ON m.contact_number = r.tid
+        WHERE m.direction = 'inbound'
+          AND (r.last_read IS NULL OR m.timestamp > r.last_read)
+        GROUP BY m.contact_number`,
+      [ids, cutoffs],
+    );
+    return new Map(rows.map((r) => [r.contact_number, r.unread]));
+  }
+
+  /**
+   * Update an outbound message's WhatsApp delivery ack (from the `message_ack`
+   * event) and push the change to SSE clients. No-ops for messages we don't
+   * store (0 rows updated → no broadcast).
+   */
+  async updateAck(messageId: string, ack: number): Promise<void> {
+    const { rows } = await query<{ contact_number: string | null }>(
+      `UPDATE messages SET ack = $2
+        WHERE message_id = $1 AND direction = 'outbound'
+        RETURNING contact_number`,
+      [messageId, ack],
+    );
+    if (rows[0]) {
+      try {
+        sseManager.broadcast('ack', {
+          message_id: messageId,
+          contact_number: rows[0].contact_number,
+          ack,
+        });
+      } catch {
+        /* SSE is best-effort */
+      }
+    }
   }
 
   /** A contact's messages that still have content to translate and aren't done yet. */

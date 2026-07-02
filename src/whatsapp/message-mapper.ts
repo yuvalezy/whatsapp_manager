@@ -75,6 +75,7 @@ export async function buildRoutable(
     direction: fromMe ? 'outbound' : 'inbound',
     timestamp: new Date(message.timestamp * 1000),
     detectedLanguage: body ? detectLanguageHint(body) : undefined,
+    ack: message.ack,
     media,
     metadata: {
       hasMedia: message.hasMedia,

@@ -1,14 +1,40 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { normalizeNumber } from '@/lib/format';
-import type { StatusData, StoredMessage } from '@/types';
+import { formatPhone, normalizeNumber } from '@/lib/format';
+import { showNotification } from '@/hooks/useNotifications';
+import type { ConversationThread, StatusData, StoredMessage } from '@/types';
 
 const BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 const API_KEY = import.meta.env.VITE_API_KEY ?? '';
 const EVENTS_URL = `${BASE}/events${API_KEY ? `?api_key=${encodeURIComponent(API_KEY)}` : ''}`;
 
+const TYPE_PREVIEW: Record<string, string> = {
+  image: '📷 Photo',
+  video: '🎥 Video',
+  ptt: '🎤 Voice note',
+  audio: '🎵 Audio',
+  document: '📄 Document',
+  sticker: 'Sticker',
+  location: '📍 Location',
+  vcard: 'Contact card',
+};
+
+function previewOf(msg: StoredMessage): string {
+  return msg.body?.trim() || msg.transcript?.trim() || TYPE_PREVIEW[msg.message_type] || 'New message';
+}
+
 export function useSse() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // The currently-open thread id, tracked in a ref so the EventSource effect
+  // below stays stable (no reconnect on navigation).
+  const openThreadRef = useRef<string>('');
+  useEffect(() => {
+    openThreadRef.current = normalizeNumber(searchParams.get('number') ?? '');
+  }, [searchParams]);
 
   useEffect(() => {
     const es = new EventSource(EVENTS_URL);
@@ -21,8 +47,41 @@ export function useSse() {
 
         qc.invalidateQueries({ queryKey: ['messages', 'by-number', normalized] });
         qc.invalidateQueries({ queryKey: ['threads'] });
+
+        // Notify on inbound messages the user isn't actively watching.
+        const isOpenAndVisible = normalized === openThreadRef.current && !document.hidden;
+        if (msg.direction === 'inbound' && !isOpenAndVisible) {
+          const thread = qc
+            .getQueryData<ConversationThread[]>(['threads'])
+            ?.find((t) => t.id === normalized);
+          const isGroup = thread?.type === 'group' || !!msg.chat_id?.endsWith('@g.us');
+          const preview = previewOf(msg);
+          const title =
+            thread?.label || (isGroup ? 'Group message' : msg.sender_name || formatPhone(normalized));
+          const body = isGroup ? `${msg.sender_name ?? 'Someone'}: ${preview}` : preview;
+          showNotification({
+            title,
+            body,
+            tag: normalized,
+            onClick: () => navigate(`/conversations?number=${normalized}`),
+          });
+        }
       } catch {
         /* ignore malformed events */
+      }
+    });
+
+    // Delivery-state (ack) changes for our own outbound messages.
+    es.addEventListener('ack', (e: MessageEvent) => {
+      try {
+        const { contact_number } = JSON.parse(e.data) as { contact_number: string | null };
+        const normalized = normalizeNumber(contact_number || '');
+        if (normalized) {
+          qc.invalidateQueries({ queryKey: ['messages', 'by-number', normalized] });
+        }
+        qc.invalidateQueries({ queryKey: ['threads'] });
+      } catch {
+        /* ignore */
       }
     });
 
@@ -52,5 +111,5 @@ export function useSse() {
     return () => {
       es.close();
     };
-  }, [qc]);
+  }, [qc, navigate]);
 }

@@ -2,7 +2,7 @@ import { query } from '../db';
 import { env } from '../config/env';
 
 export type CostProvider = 'openai' | 'deepseek';
-export type CostOperation = 'transcription' | 'translation' | 'draft_reply';
+export type CostOperation = 'transcription' | 'translation' | 'draft_reply' | 'summary';
 
 export interface CostEntry {
   id: string;
@@ -74,6 +74,18 @@ class CostService {
       `INSERT INTO api_costs (provider, operation, message_id, input_tokens, output_tokens, cost_usd)
        VALUES ('deepseek', 'draft_reply', $1, $2, $3, $4)`,
       [opts.messageId, opts.inputTokens, opts.outputTokens, costUsd],
+    );
+  }
+
+  /** Record one OpenAI conversation-summary call (vision chat completion). */
+  async recordSummary(opts: { inputTokens: number; outputTokens: number }): Promise<void> {
+    const costUsd =
+      (opts.inputTokens / 1_000_000) * env.OPENAI_SUMMARY_INPUT_COST_PER_1M_TOKENS +
+      (opts.outputTokens / 1_000_000) * env.OPENAI_SUMMARY_OUTPUT_COST_PER_1M_TOKENS;
+    await query(
+      `INSERT INTO api_costs (provider, operation, message_id, input_tokens, output_tokens, cost_usd)
+       VALUES ('openai', 'summary', $1, $2, $3, $4)`,
+      [null, opts.inputTokens, opts.outputTokens, costUsd],
     );
   }
 

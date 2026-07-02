@@ -6,14 +6,18 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/Toast';
-import { ConversationList } from '@/components/domain/ConversationList';
+import { ConversationList, threadName } from '@/components/domain/ConversationList';
+import { Input } from '@/components/ui/Input';
 import { MessageBubble } from '@/components/domain/MessageBubble';
 import { ComposeReply } from '@/components/domain/ComposeReply';
 import { PhoneNumber } from '@/components/domain/PhoneNumber';
-import { useThreads, useConversationThread, useTranslateAll } from '@/hooks/useThreads';
+import { useThreads, useConversationThread, useTranslateAll, useMarkRead } from '@/hooks/useThreads';
 import { useStatus } from '@/hooks/useStatus';
+import { useSummarize } from '@/hooks/useSummaries';
+import { SummarizeModal } from '@/components/domain/SummarizeModal';
+import { SummaryHistoryModal } from '@/components/domain/SummaryHistoryModal';
 import { formatPhone } from '@/lib/format';
-import type { ComposeState } from '@/types';
+import type { ComposeState, SummarizeInput } from '@/types';
 
 // ============================================================================
 // ConversationsPage — WhatsApp-style two-pane view: whitelisted contacts on
@@ -28,9 +32,18 @@ export function ConversationsPage() {
   const selected = searchParams.get('number');
   const { toast } = useToast();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Whether the message list is pinned to the bottom — drives "follow new
+  // messages only if the user is already at the bottom" (WhatsApp behavior).
+  const atBottomRef = useRef(true);
 
   const [composeState, setComposeState] = useState<ComposeState>('idle');
   const [messageCount, setMessageCount] = useState(1);
+  const [search, setSearch] = useState('');
+  const summarize = useSummarize();
+  const [summarizeOpen, setSummarizeOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [lastSummaryId, setLastSummaryId] = useState<string | number | null>(null);
 
   const { data: status } = useStatus();
   const outboundEnabled = status?.outboundEnabled ?? false;
@@ -44,6 +57,19 @@ export function ConversationsPage() {
 
   const { data: messages, isLoading: threadLoading } = useConversationThread(selected);
   const translateAll = useTranslateAll();
+  const markRead = useMarkRead();
+
+  const filteredThreads = useMemo(() => {
+    const all = threads ?? [];
+    const q = search.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((t) => {
+      const name = threadName(t).toLowerCase();
+      const id = t.id.toLowerCase();
+      const phone = formatPhone(t.id).toLowerCase();
+      return name.includes(q) || id.includes(q) || phone.includes(q);
+    });
+  }, [threads, search]);
 
   const ordered = useMemo(
     () =>
@@ -52,6 +78,22 @@ export function ConversationsPage() {
       ),
     [messages],
   );
+
+  // Mark the open thread read (clears unread + WhatsApp sendSeen) when it's
+  // opened, when a new message lands while watching, or when the tab regains
+  // focus — but only while the tab is actually visible, mirroring WhatsApp Web.
+  const lastMessageId = ordered.at(-1)?.id;
+  useEffect(() => {
+    if (!selected) return;
+    const mark = () => {
+      if (!document.hidden) markRead.mutate(selected);
+    };
+    mark();
+    document.addEventListener('visibilitychange', mark);
+    return () => document.removeEventListener('visibilitychange', mark);
+    // markRead.mutate is stable; re-run only when the thread or its tail changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, lastMessageId]);
 
   const highlightedIds = useMemo(() => {
     if (composeState === 'idle') return new Set<string | number>();
@@ -63,9 +105,23 @@ export function ConversationsPage() {
     setComposeState('idle');
   };
 
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Consider "at bottom" with a small slack so a few px never breaks follow.
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  };
+
+  // On thread switch: always jump to the newest message (instant).
   useEffect(() => {
+    atBottomRef.current = true;
     bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [selected, ordered.length]);
+  }, [selected]);
+
+  // On a new message: follow to the bottom only if we were already pinned there.
+  useEffect(() => {
+    if (atBottomRef.current) bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  }, [ordered.length]);
 
   const untranslatedCount = ordered.filter(
     (m) => m.translation_status !== 'done' && !!(m.body?.trim() || m.transcript?.trim()),
@@ -95,20 +151,52 @@ export function ConversationsPage() {
     });
   };
 
+  const onSummarize = (input: SummarizeInput) => {
+    if (!selected) return;
+    summarize.mutate(
+      { number: selected, input },
+      {
+        onSuccess: (saved) => {
+          setSummarizeOpen(false);
+          setLastSummaryId(saved.id);
+          setHistoryOpen(true);
+          toast({ tone: 'success', title: 'Summary ready', description: saved.title });
+        },
+        onError: (e) =>
+          toast({
+            tone: 'danger',
+            title: 'Summarize failed',
+            description: e instanceof Error ? e.message : 'Please try again.',
+          }),
+      },
+    );
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader title="Conversations" subtitle="Full threads for whitelisted contacts and monitored groups." />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="flex w-[300px] shrink-0 flex-col overflow-y-auto border-r border-line-strong bg-surface">
-          <ConversationList
-            threads={threads ?? []}
-            selected={selected}
-            onSelect={(number) => {
-              setSearchParams({ number });
-              setComposeState('idle');
-            }}
-            loading={threadsLoading}
-          />
+        <div className="flex w-[300px] shrink-0 flex-col border-r border-line-strong bg-surface">
+          <div className="shrink-0 border-b border-line-strong p-2.5">
+            <Input
+              type="search"
+              icon="search"
+              placeholder="Search conversations…"
+              value={search}
+              onChange={setSearch}
+            />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <ConversationList
+              threads={filteredThreads}
+              selected={selected}
+              onSelect={(number) => {
+                setSearchParams({ number });
+                setComposeState('idle');
+              }}
+              loading={threadsLoading}
+            />
+          </div>
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-bg">
@@ -135,18 +223,37 @@ export function ConversationsPage() {
                     )}
                   </div>
                 </div>
-                <Button
-                  variant="secondary"
-                  icon="languages"
-                  size="sm"
-                  loading={translateAll.isPending}
-                  disabled={untranslatedCount === 0}
-                  label={untranslatedCount > 0 ? `Translate all (${untranslatedCount})` : 'All translated'}
-                  onClick={onTranslateAll}
-                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    icon="sparkles"
+                    size="sm"
+                    label="Summarize"
+                    onClick={() => setSummarizeOpen(true)}
+                  />
+                  <Button
+                    variant="secondary"
+                    icon="clock"
+                    size="sm"
+                    label="History"
+                    onClick={() => {
+                      setLastSummaryId(null);
+                      setHistoryOpen(true);
+                    }}
+                  />
+                  <Button
+                    variant="secondary"
+                    icon="languages"
+                    size="sm"
+                    loading={translateAll.isPending}
+                    disabled={untranslatedCount === 0}
+                    label={untranslatedCount > 0 ? `Translate all (${untranslatedCount})` : 'All translated'}
+                    onClick={onTranslateAll}
+                  />
+                </div>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
                 {threadLoading ? (
                   <div className="text-[13px] text-fg-muted">Loading…</div>
                 ) : ordered.length === 0 ? (
@@ -195,6 +302,19 @@ export function ConversationsPage() {
           )}
         </div>
       </div>
+
+      <SummarizeModal
+        open={summarizeOpen}
+        submitting={summarize.isPending}
+        onClose={() => setSummarizeOpen(false)}
+        onSubmit={onSummarize}
+      />
+      <SummaryHistoryModal
+        open={historyOpen}
+        number={selected}
+        initialId={lastSummaryId}
+        onClose={() => setHistoryOpen(false)}
+      />
     </div>
   );
 }

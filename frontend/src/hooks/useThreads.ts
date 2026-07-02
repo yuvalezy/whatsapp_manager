@@ -39,3 +39,14 @@ export function useTranslateAll() {
     },
   });
 }
+
+/** Mark a conversation (contact or group) read — clears unread + WhatsApp sendSeen. */
+export function useMarkRead() {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean }, Error, string>({
+    mutationFn: (id) => api.markConversationRead(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['threads'] });
+    },
+  });
+}

@@ -106,17 +106,18 @@ export function ComposeReply({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    const mod = e.ctrlKey || e.metaKey;
+    if (composeState === 'composing' && mod && e.key === 'Enter') {
       e.preventDefault();
-      if (composeState === 'composing') handleGenerate();
-    } else if (e.key === 'Enter' && !e.shiftKey && composeState === 'composing') {
+      handleDirectSend(); // Ctrl/Cmd+Enter → send
+    } else if (composeState === 'composing' && mod && (e.key === 'g' || e.key === 'G')) {
       e.preventDefault();
-      handleDirectSend();
-    }
-    if (e.key === 'Escape' && isEngaged) {
+      handleGenerate(); // Ctrl/Cmd+G → generate
+    } else if (e.key === 'Escape' && isEngaged) {
       e.preventDefault();
       resetState();
     }
+    // plain Enter (and Shift+Enter): no handling → textarea inserts a newline
   };
 
   const DraftRow = ({
@@ -228,6 +229,9 @@ export function ComposeReply({
                 <Icon name="plus" size={12} />
               </button>
               <span>message{messageCount !== 1 ? 's' : ''}</span>
+              <span className="ml-auto hidden text-fg-muted sm:inline">
+                <kbd className="font-sans">Ctrl+Enter</kbd> send · <kbd className="font-sans">Ctrl+G</kbd> generate
+              </span>
             </div>
           </div>
 

@@ -32,6 +32,8 @@ export interface RoutableMessage {
   detectedLanguage?: string;
   media?: RoutableMedia;
   metadata?: Record<string, unknown>;
+  /** WhatsApp delivery ack (outbound): -1 error, 1 sent, 2 delivered, 3 read, 4 played. */
+  ack?: number | null;
 }
 
 /** Row shape as returned from the `messages` table. */
@@ -63,6 +65,9 @@ export interface StoredMessage {
 
   translated_body: string | null;
   translation_status: TranslationStatus;
+
+  /** WhatsApp delivery ack (outbound): -1 error, 1 sent, 2 delivered, 3 read, 4 played. */
+  ack: number | null;
 }
 
 /** Minimal projection used by the transcription worker. */

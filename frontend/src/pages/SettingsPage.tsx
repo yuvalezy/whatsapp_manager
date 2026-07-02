@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
+import { Switch } from '@/components/ui/Switch';
 import { CodeInline } from '@/components/ui/CodeInline';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -18,6 +19,7 @@ import {
 } from '@/hooks/useCredentials';
 import { useWhitelist } from '@/hooks/useWhitelist';
 import { useGroups } from '@/hooks/useGroups';
+import { useNotifications } from '@/hooks/useNotifications';
 import {
   useBackfillStatus,
   useRunBackfill,
@@ -29,6 +31,7 @@ import { formatPhone } from '@/lib/format';
 const TABS = [
   { value: 'keys', label: 'API Keys' },
   { value: 'backfill', label: 'Backfill' },
+  { value: 'notifications', label: 'Notifications' },
 ];
 
 const EYEBROW = 'text-[11px] font-bold uppercase tracking-[0.04em] text-fg-muted';
@@ -46,7 +49,7 @@ export function SettingsPage() {
       />
       <div className="flex flex-col gap-[22px] p-7">
         <Tabs tabs={TABS} active={tab} onChange={setTab} />
-        {tab === 'keys' ? <CredentialsTab /> : <BackfillTab />}
+        {tab === 'keys' ? <CredentialsTab /> : tab === 'backfill' ? <BackfillTab /> : <NotificationsTab />}
       </div>
     </>
   );
@@ -335,5 +338,61 @@ function StatLine({ label, value }: { label: string; value: string | number }) {
       <span className="text-fg-muted">{label}</span>
       <span className="font-bold">{value}</span>
     </span>
+  );
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+function NotificationsTab() {
+  const { supported, permission, enabled, enable, disable } = useNotifications();
+  const { toast } = useToast();
+
+  const onToggle = async (next: boolean) => {
+    if (!next) {
+      disable();
+      return;
+    }
+    await enable();
+    if (Notification.permission === 'denied') {
+      toast({
+        tone: 'danger',
+        title: 'Notifications blocked',
+        description: 'Allow notifications for this site in your browser settings, then try again.',
+      });
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-[22px]">
+      <div className="flex flex-col gap-3 rounded-wm-card border border-line-strong bg-surface p-5">
+        <span className={EYEBROW}>Desktop notifications</span>
+        {!supported ? (
+          <EmptyState
+            icon="ban"
+            title="Not supported"
+            description="This browser does not support desktop notifications."
+          />
+        ) : (
+          <>
+            <Switch
+              checked={enabled && permission === 'granted'}
+              onChange={onToggle}
+              label="Notify me when a new message arrives"
+            />
+            <span className="text-xs text-fg-muted">
+              Shows a browser notification for new inbound messages (contacts and groups).
+              Delivery rides the live connection, so a dashboard tab must stay open — it can be in
+              the background. Clicking a notification opens that conversation.
+            </span>
+            {permission === 'denied' && (
+              <span className="text-xs text-danger">
+                Notifications are blocked for this site. Enable them in your browser’s site settings
+                to turn this on.
+              </span>
+            )}
+          </>
+        )}
+      </div>
+    </div>
   );
 }

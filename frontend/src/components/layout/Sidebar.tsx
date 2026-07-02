@@ -13,10 +13,12 @@ export interface SidebarProps {
   collapsed?: boolean;
   onNavigate?: (key: string) => void;
   onToggleCollapse?: () => void;
+  /** Per-nav-key count badges (e.g. { conversations: 3 } for unread). */
+  badges?: Record<string, number>;
   className?: string;
 }
 
-export function Sidebar({ activeKey, collapsed = false, onNavigate, onToggleCollapse, className }: SidebarProps) {
+export function Sidebar({ activeKey, collapsed = false, onNavigate, onToggleCollapse, badges, className }: SidebarProps) {
   return (
     <div
       className={cn(
@@ -44,6 +46,7 @@ export function Sidebar({ activeKey, collapsed = false, onNavigate, onToggleColl
       <nav className="flex flex-1 flex-col gap-0.5">
         {NAV_ITEMS.map((item) => {
           const isActive = item.key === activeKey;
+          const count = badges?.[item.key] ?? 0;
           return (
             <button
               key={item.key}
@@ -51,7 +54,7 @@ export function Sidebar({ activeKey, collapsed = false, onNavigate, onToggleColl
               title={item.label}
               onClick={() => onNavigate?.(item.key)}
               className={cn(
-                'flex w-full items-center gap-[11px] rounded-[10px] border border-transparent text-[13.5px] font-semibold transition-colors duration-100',
+                'relative flex w-full items-center gap-[11px] rounded-[10px] border border-transparent text-[13.5px] font-semibold transition-colors duration-100',
                 collapsed ? 'justify-center p-2.5' : 'justify-start px-3 py-2.5',
                 isActive
                   ? 'bg-primary-soft text-primary'
@@ -60,6 +63,14 @@ export function Sidebar({ activeKey, collapsed = false, onNavigate, onToggleColl
             >
               <Icon name={item.icon} size={17} />
               {!collapsed && <span>{item.label}</span>}
+              {count > 0 &&
+                (collapsed ? (
+                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
+                ) : (
+                  <span className="ml-auto flex h-[18px] min-w-[18px] items-center justify-center rounded-pill bg-primary px-1.5 text-[11px] font-bold leading-none text-primary-fg">
+                    {count > 99 ? '99+' : count}
+                  </span>
+                ))}
             </button>
           );
         })}

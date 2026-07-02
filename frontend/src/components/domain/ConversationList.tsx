@@ -38,7 +38,7 @@ function previewFor(thread: ConversationThread): string {
   return prefix + (text || TYPE_PREVIEW[m.message_type] || 'Message');
 }
 
-function threadName(t: ConversationThread): string {
+export function threadName(t: ConversationThread): string {
   return t.label || (t.type === 'group' ? t.id : formatPhone(t.id));
 }
 
@@ -54,6 +54,7 @@ export function ConversationList({ threads, selected, onSelect, loading }: Conve
       {threads.map((t) => {
         const name = threadName(t);
         const isSelected = selected === t.id;
+        const hasUnread = t.unread > 0 && !isSelected;
         return (
           <button
             key={`${t.type}:${t.id}`}
@@ -71,12 +72,26 @@ export function ConversationList({ threads, selected, onSelect, loading }: Conve
                   {t.type === 'group' && <Icon name="users" size={13} className="shrink-0 text-fg-muted" />}
                   <span className="truncate text-[13.5px] font-bold text-fg">{name}</span>
                 </span>
-                {t.lastMessage && <RelativeTime timestamp={t.lastMessage.timestamp} fontSize="11px" />}
+                {t.lastMessage && (
+                  <RelativeTime timestamp={t.lastMessage.timestamp} fontSize="11px" className="shrink-0" />
+                )}
               </div>
-              <span className="truncate text-[12.5px] text-fg-secondary">
-                {t.type === 'group' && t.bp ? `${t.bp} · ` : ''}
-                {previewFor(t)}
-              </span>
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={cn(
+                    'truncate text-[12.5px]',
+                    hasUnread ? 'font-semibold text-fg' : 'text-fg-secondary',
+                  )}
+                >
+                  {t.type === 'group' && t.bp ? `${t.bp} · ` : ''}
+                  {previewFor(t)}
+                </span>
+                {hasUnread && (
+                  <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-pill bg-primary px-1.5 text-[11px] font-bold leading-none text-primary-fg">
+                    {t.unread > 99 ? '99+' : t.unread}
+                  </span>
+                )}
+              </div>
             </div>
           </button>
         );

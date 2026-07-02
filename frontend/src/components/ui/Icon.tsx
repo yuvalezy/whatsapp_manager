@@ -18,6 +18,12 @@ const ICONS = {
     </>
   ),
   check: <polyline points="20 6 9 17 4 12" />,
+  checkCheck: (
+    <>
+      <path d="M18 6 7 17l-5-5" />
+      <path d="m22 10-7.5 7.5L13 16" />
+    </>
+  ),
   checkCircle: (
     <>
       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />

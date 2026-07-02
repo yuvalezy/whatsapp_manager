@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { NAV_ITEMS, activeKeyForPath } from './nav';
 import { useSse } from '@/hooks/useSse';
+import { useThreads } from '@/hooks/useThreads';
 
 // ============================================================================
 // AppLayout — the application shell: Sidebar + TopBar + routed content.
@@ -19,6 +20,9 @@ export function AppLayout() {
 
   useSse();
 
+  const { data: threads } = useThreads();
+  const unreadTotal = (threads ?? []).reduce((sum, t) => sum + (t.unread ?? 0), 0);
+
   const handleNavigate = (key: string) => {
     const item = NAV_ITEMS.find((n) => n.key === key);
     if (item) navigate(item.path);
@@ -31,6 +35,7 @@ export function AppLayout() {
         collapsed={collapsed}
         onNavigate={handleNavigate}
         onToggleCollapse={() => setCollapsed((c) => !c)}
+        badges={{ conversations: unreadTotal }}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />

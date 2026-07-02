@@ -72,6 +72,11 @@ const envSchema = z.object({
   TRANSLATION_MODEL: z.string().default('deepseek-v4-flash'),
   TARGET_LANGUAGE: z.string().default('en'),
 
+  // Conversation summaries (OpenAI vision chat model). gpt-4o-mini is cheap and
+  // supports vision; override with gpt-4o for higher quality.
+  SUMMARY_MODEL: z.string().default('gpt-4o-mini'),
+  SUMMARY_MAX_IMAGES: z.coerce.number().int().nonnegative().default(8),
+
   // ── Media archival ───────────────────────────────────────────
   MEDIA_STORAGE_PATH: z.string().default('./media'),
   MEDIA_MAX_BYTES: z.coerce.number().int().nonnegative().default(0), // 0 = unlimited
@@ -95,6 +100,9 @@ const envSchema = z.object({
   OPENAI_TRANSCRIBE_COST_PER_MINUTE: z.coerce.number().nonnegative().default(0.006),
   DEEPSEEK_INPUT_COST_PER_1M_TOKENS: z.coerce.number().nonnegative().default(0.14),
   DEEPSEEK_OUTPUT_COST_PER_1M_TOKENS: z.coerce.number().nonnegative().default(0.28),
+  // gpt-4o-mini list price (image tokens are folded into prompt_tokens by OpenAI).
+  OPENAI_SUMMARY_INPUT_COST_PER_1M_TOKENS: z.coerce.number().nonnegative().default(0.15),
+  OPENAI_SUMMARY_OUTPUT_COST_PER_1M_TOKENS: z.coerce.number().nonnegative().default(0.6),
 });
 
 const parsed = envSchema.safeParse(process.env);

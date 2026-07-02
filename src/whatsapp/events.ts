@@ -5,6 +5,7 @@ import { printQrToTerminal } from './qr';
 import { whitelistService } from '../whitelist/whitelist.service';
 import { groupService } from '../groups/group.service';
 import { ignoredStats } from '../messages/ignored-stats';
+import { messageService } from '../messages/message.service';
 import { MessageRouter } from '../router/message-router';
 import { buildRoutable, contactJidOf } from './message-mapper';
 import { resolveContactNumber } from './lid-resolver';
@@ -80,6 +81,15 @@ export function registerEvents(
   client.on('message_create', (message: Message) => {
     handleMessage(service, client, message, router).catch((err) => {
       logger.error({ err }, 'Error handling message');
+    });
+  });
+
+  // Delivery-state updates for our own outbound messages (sent → delivered → read).
+  // Patches an existing stored row rather than ingesting a new message, so it
+  // talks to the message service directly instead of the router seam.
+  client.on('message_ack', (message: Message, ack: number) => {
+    messageService.updateAck(message.id._serialized, ack).catch((err) => {
+      logger.error({ err }, 'Error updating message ack');
     });
   });
 }

@@ -7,7 +7,13 @@ import { draftReplyService } from '../enrichment/draft-reply.service';
 import { absoluteMediaPath } from '../media/media.service';
 import { whitelistService } from '../whitelist/whitelist.service';
 import { groupService } from '../groups/group.service';
+import { readStateService } from '../reads/read-state.service';
 import { costService } from '../costs/cost.service';
+import { whatsappService } from '../whatsapp/client';
+import { toChatId, toGroupChatId } from '../utils/phone';
+import { env } from '../config/env';
+import { summaryService } from '../summaries/summary.service';
+import { summarizationService } from '../enrichment/summarization.service';
 import { logger } from '../logger';
 
 export const messagesRouter = Router();
@@ -35,12 +41,19 @@ messagesRouter.get('/', async (req, res, next) => {
 // /messages/:number expects.
 messagesRouter.get('/threads', async (_req, res, next) => {
   try {
-    const [contacts, groups, latest] = await Promise.all([
+    const [contacts, groups, latest, reads] = await Promise.all([
       whitelistService.list(),
       groupService.list(),
       messageService.listThreads(),
+      readStateService.list(),
     ]);
     const byNumber = new Map(latest.map((m) => [m.contact_number, m]));
+    const readAt = new Map(reads.map((r) => [r.thread_id, r.last_read_at]));
+
+    const ids = [...contacts.map((c) => c.phone_number), ...groups.map((g) => g.group_id)];
+    const unread = await messageService.getUnreadCounts(
+      ids.map((id) => ({ threadId: id, lastReadAt: readAt.get(id) ?? null })),
+    );
 
     const contactThreads = contacts.map((c) => ({
       type: 'contact' as const,
@@ -48,6 +61,7 @@ messagesRouter.get('/threads', async (_req, res, next) => {
       label: c.label,
       bp: c.ezy_bp_name ?? null,
       lastMessage: byNumber.get(c.phone_number) ?? null,
+      unread: unread.get(c.phone_number) ?? 0,
     }));
     const groupThreads = groups.map((g) => ({
       type: 'group' as const,
@@ -55,6 +69,7 @@ messagesRouter.get('/threads', async (_req, res, next) => {
       label: g.subject,
       bp: g.ezy_bp_name ?? null,
       lastMessage: byNumber.get(g.group_id) ?? null,
+      unread: unread.get(g.group_id) ?? 0,
     }));
 
     const threads = [...contactThreads, ...groupThreads].sort((a, b) => {
@@ -216,6 +231,125 @@ messagesRouter.post('/:number/draft-reply', async (req, res, next) => {
   }
 });
 
+// POST /messages/:number/read — mark a conversation (contact OR group) read up
+// to now: clears its unread count and best-effort tells WhatsApp we've seen it
+// (sendSeen → the other side's "read" ticks). `:number` is the thread id.
+messagesRouter.post('/:number/read', async (req, res, next) => {
+  const { number } = req.params;
+  try {
+    const isGroup = groupService.isMonitored(number);
+    if (!whitelistService.isWhitelisted(number) && !isGroup) {
+      res.status(403).json({ error: 'Not a whitelisted contact or monitored group' });
+      return;
+    }
+
+    await readStateService.markRead(number);
+
+    // Best-effort WhatsApp read receipt — never fail the request over it.
+    const client = whatsappService.getClient();
+    if (client && whatsappService.getState() === 'READY') {
+      const [latest] = await messageService.listByNumber(number, 1, 0);
+      const chatId = latest?.chat_id || (isGroup ? toGroupChatId(number) : toChatId(number));
+      client.sendSeen(chatId).catch((err) => logger.error({ err, number }, 'sendSeen failed'));
+    }
+
+    res.json({ data: { ok: true } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const IMAGE_MEDIA_TYPES = new Set(['image', 'sticker']);
+
+/** Read downloaded image files in a window into base64 data URLs for vision (capped). */
+async function buildSummaryImages(messages: StoredMessage[]): Promise<{ dataUrl: string }[]> {
+  const imageMsgs = messages.filter(
+    (m) => IMAGE_MEDIA_TYPES.has(String(m.media_type)) && m.media_status === 'downloaded' && m.media_path,
+  );
+  const images: { dataUrl: string }[] = [];
+  for (const m of imageMsgs) {
+    if (images.length >= env.SUMMARY_MAX_IMAGES) {
+      logger.info({ omitted: imageMsgs.length - images.length }, 'Summary: image cap reached, some images omitted');
+      break;
+    }
+    try {
+      const buf = await fs.promises.readFile(absoluteMediaPath(m.media_path as string));
+      const mime = m.media_mimetype || 'image/jpeg';
+      images.push({ dataUrl: `data:${mime};base64,${buf.toString('base64')}` });
+    } catch (err) {
+      logger.warn({ err, id: m.id }, 'Summary: failed to read image file');
+    }
+  }
+  return images;
+}
+
+// POST /messages/:number/summarize — AI summary of the last N minutes/hours of a
+// thread (contact or group), including any images (vision). Persists to history.
+messagesRouter.post('/:number/summarize', async (req, res, next) => {
+  const { number } = req.params;
+  const body = req.body as { amount?: unknown; unit?: unknown };
+  const amount = typeof body.amount === 'number' && Number.isFinite(body.amount) ? Math.round(body.amount) : 30;
+  const unit = body.unit === 'hours' ? 'hours' : 'minutes';
+  const windowMinutes = Math.min(Math.max(amount * (unit === 'hours' ? 60 : 1), 1), 7 * 24 * 60);
+
+  try {
+    if (!summarizationService.available()) {
+      res.status(503).json({ error: 'Summarization is unavailable — configure an OpenAI API key.' });
+      return;
+    }
+    if (!whitelistService.isWhitelisted(number) && !groupService.isMonitored(number)) {
+      res.status(403).json({ error: 'Not a whitelisted contact or monitored group' });
+      return;
+    }
+
+    const endMs = await messageService.getLastMessageTimestamp(number);
+    if (endMs === null) {
+      res.status(400).json({ error: 'Nothing to summarize — no messages captured for this conversation.' });
+      return;
+    }
+    const startMs = endMs - windowMinutes * 60_000;
+    const messages = await messageService.listByNumberBetween(number, startMs, endMs);
+    if (messages.length === 0) {
+      res.status(400).json({ error: `Nothing to summarize in the last ${windowMinutes} minute(s).` });
+      return;
+    }
+
+    const images = await buildSummaryImages(messages);
+    const result = await summarizationService.summarize(messages, images);
+
+    const saved = await summaryService.create({
+      contactNumber: number,
+      title: result.title,
+      body: result.body,
+      windowMinutes,
+      windowStart: new Date(startMs),
+      windowEnd: new Date(endMs),
+      messageCount: messages.length,
+      imageCount: images.length,
+    });
+
+    if (result.inputTokens != null && result.outputTokens != null) {
+      await costService
+        .recordSummary({ inputTokens: result.inputTokens, outputTokens: result.outputTokens })
+        .catch((err) => logger.error({ err }, 'Failed to record summary cost'));
+    }
+
+    res.status(201).json({ data: saved });
+  } catch (err) {
+    logger.error({ err, number }, 'Summarization failed');
+    next(err);
+  }
+});
+
+// GET /messages/:number/summaries — past summaries for a thread (newest first).
+messagesRouter.get('/:number/summaries', async (req, res, next) => {
+  try {
+    res.json({ data: await summaryService.list(req.params.number) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /messages/:id/media — stream the locally-archived attachment.
 messagesRouter.get('/:id/media', async (req, res, next) => {
   const { id } = req.params;
@@ -234,7 +368,31 @@ messagesRouter.get('/:id/media', async (req, res, next) => {
       res.status(404).json({ error: 'Media file missing' });
       return;
     }
+    const { size } = await fs.promises.stat(abs);
     if (msg.media_mimetype) res.setHeader('Content-Type', msg.media_mimetype);
+    // Advertise range support so browsers can seek audio/video (Safari refuses
+    // to play <video>/<audio> without 206 Partial Content responses).
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    const range = req.headers.range;
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (match && (match[1] || match[2])) {
+        const start = match[1] ? parseInt(match[1], 10) : size - parseInt(match[2], 10);
+        const end = match[2] && match[1] ? parseInt(match[2], 10) : size - 1;
+        if (start >= size || end >= size || start > end) {
+          res.status(416).setHeader('Content-Range', `bytes */${size}`).end();
+          return;
+        }
+        res.status(206);
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`);
+        res.setHeader('Content-Length', end - start + 1);
+        fs.createReadStream(abs, { start, end }).pipe(res);
+        return;
+      }
+    }
+
+    res.setHeader('Content-Length', size);
     fs.createReadStream(abs).pipe(res);
   } catch (err) {
     next(err);

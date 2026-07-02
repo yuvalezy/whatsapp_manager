@@ -181,6 +181,9 @@ export interface StoredMessage {
 
   translated_body?: string | null;
   translation_status?: TranslationStatus;
+
+  /** WhatsApp delivery ack (outbound): -1 error, 1 sent, 2 delivered, 3 read, 4 played. */
+  ack?: number | null;
 }
 
 export interface CredentialSummary {
@@ -203,6 +206,8 @@ export interface ConversationThread {
   /** Assigned EZY Portal business partner name, if any. */
   bp?: string | null;
   lastMessage: StoredMessage | null;
+  /** Count of inbound messages received since this thread was last opened. */
+  unread: number;
 }
 
 export interface TranslateAllResult {
@@ -212,8 +217,27 @@ export interface TranslateAllResult {
   failed: number;
 }
 
+// An AI-generated conversation summary (one per "summarize last N min/hours" action).
+export interface SummaryEntry {
+  id: string | number;
+  contact_number: string;
+  title: string;
+  body: string;
+  window_minutes: number;
+  window_start: string;
+  window_end: string;
+  message_count: number;
+  image_count: number;
+  created_at: string;
+}
+
+export interface SummarizeInput {
+  amount: number;
+  unit: 'minutes' | 'hours';
+}
+
 export type CostProvider = 'openai' | 'deepseek';
-export type CostOperation = 'transcription' | 'translation';
+export type CostOperation = 'transcription' | 'translation' | 'draft_reply' | 'summary';
 
 export interface CostEntry {
   [key: string]: unknown;

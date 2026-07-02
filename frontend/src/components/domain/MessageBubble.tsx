@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { MessageTypeBadge } from './MessageTypeBadge';
+import { ImageLightbox } from './ImageLightbox';
 import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/format';
 import { api } from '@/lib/api';
@@ -63,9 +65,32 @@ export function MessageBubble({ message: msg, highlighted = false, showSender = 
             <StatusPill tone="warning" label="Transcribing…" pulse />
           )}
           <span title={formatDateTime(msg.timestamp)}>{time}</span>
+          {isOutbound && <AckIndicator ack={msg.ack} />}
         </div>
       </div>
     </div>
+  );
+}
+
+/** WhatsApp delivery ticks for an outbound message (clock → ✓ → ✓✓ → blue ✓✓). */
+function AckIndicator({ ack }: { ack?: number | null }) {
+  if (ack === -1) {
+    return <Icon name="alertCircle" size={13} className="text-danger" aria-label="Failed to send" />;
+  }
+  if (ack == null || ack === 0) {
+    return <Icon name="clock" size={12} className="opacity-70" aria-label="Pending" />;
+  }
+  if (ack === 1) {
+    return <Icon name="check" size={13} aria-label="Sent" />;
+  }
+  // 2 = delivered, ≥3 = read/played (blue).
+  return (
+    <Icon
+      name="checkCheck"
+      size={14}
+      className={ack >= 3 ? 'text-info' : undefined}
+      aria-label={ack >= 3 ? 'Read' : 'Delivered'}
+    />
   );
 }
 
@@ -84,16 +109,27 @@ function TranscriptBlock({ msg }: { msg: StoredMessage }) {
 }
 
 function BubbleMedia({ message: msg }: { message: StoredMessage }) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const url = api.mediaUrl(msg.id);
   const type = msg.media_type ?? msg.message_type;
 
   if (type === 'image' || type === 'sticker') {
     return (
-      <img
-        src={url}
-        alt="attachment"
-        className="max-h-[280px] w-full rounded-[10px] object-contain"
-      />
+      <>
+        <button
+          type="button"
+          onClick={() => setLightboxOpen(true)}
+          className="block overflow-hidden rounded-[10px]"
+          aria-label="View image full screen"
+        >
+          <img
+            src={url}
+            alt="attachment"
+            className="max-h-[280px] w-full cursor-zoom-in rounded-[10px] object-contain transition hover:opacity-95"
+          />
+        </button>
+        {lightboxOpen && <ImageLightbox url={url} onClose={() => setLightboxOpen(false)} />}
+      </>
     );
   }
   if (type === 'ptt' || type === 'audio') {

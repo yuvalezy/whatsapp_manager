@@ -27,6 +27,8 @@ import type {
   QrData,
   StatusData,
   StoredMessage,
+  SummaryEntry,
+  SummarizeInput,
   TranslateAllResult,
   WhatsAppContact,
   WhitelistEntry,
@@ -164,9 +166,25 @@ export const api = {
   // One row per whitelisted contact — their latest message, sorted by recency.
   listThreads: () => request<ConversationThread[]>('/messages/threads'),
 
+  // AI conversation summaries (last N minutes/hours, with image vision) + history.
+  summarize: (number: string, input: SummarizeInput) =>
+    request<SummaryEntry>(`/messages/${encodeURIComponent(number)}/summarize`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  listSummaries: (number: string) =>
+    request<SummaryEntry[]>(`/messages/${encodeURIComponent(number)}/summaries`),
+
   // Translate every not-yet-translated message in a contact's thread.
   translateAll: (number: string) =>
     request<TranslateAllResult>(`/messages/${encodeURIComponent(number)}/translate-all`, {
+      method: 'POST',
+    }),
+
+  // Mark a conversation (contact or group) read: clears its unread count and
+  // best-effort sends a WhatsApp read receipt (sendSeen). `id` is the thread key.
+  markConversationRead: (id: string) =>
+    request<{ ok: boolean }>(`/messages/${encodeURIComponent(id)}/read`, {
       method: 'POST',
     }),
 
