@@ -14,6 +14,8 @@ export interface ComposeReplyProps {
   onMessageCountChange: (count: number) => void;
   composeState: ComposeState;
   onComposeStateChange: (state: ComposeState) => void;
+  /** Called the instant a send is kicked off, so the thread view can snap to the bottom. */
+  onSend?: () => void;
 }
 
 const LANGUAGE_LABELS: Record<string, string> = { es: 'Spanish', en: 'English', he: 'Hebrew' };
@@ -25,6 +27,7 @@ export function ComposeReply({
   onMessageCountChange,
   composeState,
   onComposeStateChange,
+  onSend,
 }: ComposeReplyProps) {
   const [draft, setDraft] = useState('');
   const [englishDraft, setEnglishDraft] = useState('');
@@ -63,6 +66,7 @@ export function ComposeReply({
     if (!messageToSend) return;
     setSendingWhich(which);
     onComposeStateChange('sending');
+    onSend?.();
     sendMessage.mutate(
       { number: contactNumber, message: messageToSend, isGroup },
       {

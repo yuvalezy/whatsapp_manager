@@ -15,7 +15,13 @@ import { ThreadFindBar } from '@/components/domain/ThreadFindBar';
 import { DayDivider } from '@/components/domain/DayDivider';
 import { ComposeReply } from '@/components/domain/ComposeReply';
 import { PhoneNumber } from '@/components/domain/PhoneNumber';
-import { useThreads, useConversationThread, useTranslateAll, useMarkRead } from '@/hooks/useThreads';
+import {
+  useThreads,
+  useConversationThread,
+  useTranslateAll,
+  useMarkRead,
+  DEFAULT_THREAD_PAGE,
+} from '@/hooks/useThreads';
 import { useStatus } from '@/hooks/useStatus';
 import { useSummarize } from '@/hooks/useSummaries';
 import { SummarizeModal } from '@/components/domain/SummarizeModal';
@@ -25,8 +31,8 @@ import { dayKey, formatPhone, normalizeNumber } from '@/lib/format';
 import type { ComposeState, StoredMessage, SummarizeInput } from '@/types';
 
 // Newest-page size loaded by useConversationThread; older pages start past it.
-const THREAD_PAGE = 500;
-const OLDER_PAGE = 200;
+const THREAD_PAGE = DEFAULT_THREAD_PAGE;
+const OLDER_PAGE = 50;
 
 /** De-duplicate messages by id, keeping first occurrence (older page first). */
 function dedupeById(list: StoredMessage[]): StoredMessage[] {
@@ -66,6 +72,26 @@ export function ConversationsPage() {
   // Whether the message list is pinned to the bottom — drives "follow new
   // messages only if the user is already at the bottom" (WhatsApp behavior).
   const atBottomRef = useRef(true);
+  // True right after a thread switch until the first post-switch bottom-jump
+  // runs — distinguishes an instant jump-to-bottom (new thread) from a smooth
+  // follow (live message arriving while already pinned to the bottom).
+  const justSwitchedRef = useRef(true);
+  const loadingOlderRef = useRef(false);
+  const contentRoRef = useRef<ResizeObserver | null>(null);
+  // True for the couple of frames right after WE programmatically move the
+  // scroll position — masks the native `scroll` event that follows so
+  // `handleScroll` doesn't mistake our own (possibly momentarily short, if
+  // content is still growing) jump for the user scrolling away from the
+  // bottom, which would otherwise disable the ResizeObserver's re-anchoring.
+  const suppressScrollRef = useRef(false);
+
+  const scrollToBottom = (behavior: ScrollBehavior) => {
+    suppressScrollRef.current = true;
+    bottomRef.current?.scrollIntoView({ block: 'end', behavior });
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      suppressScrollRef.current = false;
+    }));
+  };
 
   const [composeState, setComposeState] = useState<ComposeState>('idle');
   const [messageCount, setMessageCount] = useState(1);
@@ -100,7 +126,7 @@ export function ConversationsPage() {
     isLoading: threadLoading,
     isError: threadError,
     refetch: refetchThread,
-  } = useConversationThread(selected);
+  } = useConversationThread(selected, THREAD_PAGE);
   const translateAll = useTranslateAll();
   const markRead = useMarkRead();
 
@@ -131,7 +157,7 @@ export function ConversationsPage() {
   const canLoadOlder = !olderExhausted && (baseCount >= THREAD_PAGE || older.length > 0);
 
   const loadOlder = () => {
-    if (!selected || loadingOlder || olderExhausted) return;
+    if (!selected || loadingOlderRef.current || olderExhausted) return;
     // Keyset cursor: fetch messages strictly older than the oldest one currently
     // loaded (by timestamp, tie-broken by id). Drift-free — a live message landing
     // mid-request can't shift a numbered offset out from under us and silently skip
@@ -141,6 +167,7 @@ export function ConversationsPage() {
     const el = scrollRef.current;
     const prevHeight = el?.scrollHeight ?? 0;
     const prevTop = el?.scrollTop ?? 0;
+    loadingOlderRef.current = true;
     setLoadingOlder(true);
     api
       .listMessagesByNumber(normalizeNumber(selected), {
@@ -167,7 +194,10 @@ export function ConversationsPage() {
           description: e instanceof Error ? e.message : 'Please try again.',
         }),
       )
-      .finally(() => setLoadingOlder(false));
+      .finally(() => {
+        loadingOlderRef.current = false;
+        setLoadingOlder(false);
+      });
   };
 
   // In-thread find: messages whose text (body/transcript/translation) matches.
@@ -266,19 +296,22 @@ export function ConversationsPage() {
 
   const handleScroll = () => {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el || suppressScrollRef.current) return;
     // Consider "at bottom" with a small slack so a few px never breaks follow.
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    if (el.scrollTop < 100 && canLoadOlder && !loadingOlderRef.current) {
+      loadOlder();
+    }
   };
 
-  // On thread switch: reset older-history + find + compose, then jump to newest
-  // (instant). Keyed on `selected` so EVERY entry path resets the parent-owned
-  // compose panel — sidebar click, search navigation, or a direct `?number=` URL
-  // — not just the sidebar handler (else you land on a new thread with a stale
-  // 'preview'/'sending' panel).
+  // On thread switch: reset older-history + find + compose, and mark the next
+  // bottom-jump as an instant (non-animated) one. Keyed on `selected` so EVERY
+  // entry path resets the parent-owned compose panel — sidebar click, search
+  // navigation, or a direct `?number=` URL — not just the sidebar handler (else
+  // you land on a new thread with a stale 'preview'/'sending' panel).
   useEffect(() => {
     atBottomRef.current = true;
-    bottomRef.current?.scrollIntoView({ block: 'end' });
+    justSwitchedRef.current = true;
     setOlder([]);
     setOlderExhausted(false);
     setLoadingOlder(false);
@@ -289,10 +322,47 @@ export function ConversationsPage() {
     setMessageCount(1);
   }, [selected]);
 
-  // On a new message: follow to the bottom only if we were already pinned there.
+  // Jump to the bottom whenever the tail of the thread changes while pinned
+  // there — instantly right after a thread switch (`justSwitchedRef`), smoothly
+  // for a live/sent message arriving afterward. Keyed on the LAST message's id
+  // (not just `ordered.length`) because `messages` is a fixed-size newest-N
+  // window: sending/receiving a message can shift it (one drops out as one
+  // comes in) without changing the total count, which would silently starve a
+  // length-only dependency. `selected` is included too so a switch to an
+  // already-cached thread with the same tail still forces a re-jump instead of
+  // silently keeping the previous thread's scroll position. Reuses the
+  // `lastMessageId` declared above for the mark-read effect.
   useEffect(() => {
-    if (atBottomRef.current) bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
-  }, [ordered.length]);
+    if (!atBottomRef.current || ordered.length === 0) return;
+    scrollToBottom(justSwitchedRef.current ? 'auto' : 'smooth');
+    justSwitchedRef.current = false;
+    // Safety net alongside the ResizeObserver below: images/video/audio can
+    // still be mid-fetch when this runs and grow the container a bit later.
+    // Re-sync a couple more times shortly after so a slow-loading attachment
+    // can't leave the view stranded short of the true bottom.
+    const timers = [100, 400, 1200].map((ms) =>
+      setTimeout(() => {
+        if (atBottomRef.current) scrollToBottom('auto');
+      }, ms),
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [selected, ordered.length, lastMessageId]);
+
+  // Re-anchor to the true bottom whenever the message list's content grows after
+  // the fact (image/video/audio finishing load, a translation expanding a bubble)
+  // while the user is pinned to the bottom. A callback ref is used (not a plain
+  // ref + effect) because this wrapper div is torn down/recreated across the
+  // loading/error/empty/populated branches and across thread switches.
+  const contentRef = useCallback((node: HTMLDivElement | null) => {
+    contentRoRef.current?.disconnect();
+    contentRoRef.current = null;
+    if (!node) return;
+    const ro = new ResizeObserver(() => {
+      if (atBottomRef.current) scrollToBottom('auto');
+    });
+    ro.observe(node);
+    contentRoRef.current = ro;
+  }, []);
 
   const untranslatedCount = ordered.filter(
     (m) => m.translation_status !== 'done' && !!(m.body?.trim() || m.transcript?.trim()),
@@ -484,7 +554,7 @@ export function ConversationsPage() {
                     description="Nothing captured for this contact yet."
                   />
                 ) : (
-                  <div className="flex flex-col gap-2.5">
+                  <div ref={contentRef} className="flex flex-col gap-2.5">
                     {canLoadOlder && (
                       <div className="flex justify-center py-1">
                         <Button
@@ -537,6 +607,9 @@ export function ConversationsPage() {
                     } else {
                       setComposeState(state);
                     }
+                  }}
+                  onSend={() => {
+                    atBottomRef.current = true;
                   }}
                 />
               ) : (

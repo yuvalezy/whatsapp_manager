@@ -13,16 +13,23 @@ export function useThreads(pollMs = 0) {
   });
 }
 
+/** Default number of newest messages loaded when a conversation is opened. */
+export const DEFAULT_THREAD_PAGE = 50;
+
 /**
  * Full thread for the open conversation. Updated in real time via SSE when new
  * messages arrive for this contact (no polling). Shares its query key with
- * `useMessagesByNumber(number, {limit:500})` so translate mutations refresh this too.
+ * `useMessagesByNumber(number, {limit})` so translate mutations refresh this too.
  */
-export function useConversationThread(number: string | null | undefined, pollMs = 0) {
+export function useConversationThread(
+  number: string | null | undefined,
+  limit = DEFAULT_THREAD_PAGE,
+  pollMs = 0,
+) {
   const normalized = number ? normalizeNumber(number) : '';
   return useQuery<StoredMessage[]>({
-    queryKey: ['messages', 'by-number', normalized, { limit: 500 }],
-    queryFn: () => api.listMessagesByNumber(normalized, { limit: 500 }),
+    queryKey: ['messages', 'by-number', normalized, { limit }],
+    queryFn: () => api.listMessagesByNumber(normalized, { limit }),
     enabled: !!normalized,
     refetchInterval: pollMs || false,
   });
