@@ -17,3 +17,9 @@ npm-debug.log*
 
 # OS
 .DS_Store
+
+# Agent-orchestrator test clone (secrets / cloned session / backups / scratch — never commit)
+.env.test
+.env.bak*
+.wwebjs_auth_test/
+tmp/
