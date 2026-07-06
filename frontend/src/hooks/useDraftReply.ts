@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { normalizeNumber } from '@/lib/format';
-import type { DraftReplyResult } from '@/types';
+import type { DraftReplyResult, OutboundAttachment } from '@/types';
 
 export function useDraftReply() {
   const qc = useQueryClient();
@@ -20,12 +20,18 @@ export function useSendMessage() {
   return useMutation<
     { messageId: string },
     Error,
-    { number: string; message: string; isGroup?: boolean; quotedMessageId?: string }
+    {
+      number: string;
+      message: string;
+      isGroup?: boolean;
+      quotedMessageId?: string;
+      attachment?: OutboundAttachment;
+    }
   >({
-    mutationFn: ({ number, message, isGroup, quotedMessageId }) =>
+    mutationFn: ({ number, message, isGroup, quotedMessageId, attachment }) =>
       isGroup
-        ? api.sendGroupMessage(number, message, quotedMessageId)
-        : api.sendMessage(number, message, quotedMessageId),
+        ? api.sendGroupMessage(number, message, quotedMessageId, attachment)
+        : api.sendMessage(number, message, quotedMessageId, attachment),
     onSuccess: (_data, variables) => {
       const normalized = normalizeNumber(variables.number);
       void qc.invalidateQueries({ queryKey: ['messages', 'by-number', normalized] });

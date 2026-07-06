@@ -320,6 +320,13 @@ export interface DraftReplyResult {
 
 export type ComposeState = 'idle' | 'composing' | 'generating' | 'preview' | 'sending';
 
+/** Outbound attachment payload — base64 (no `data:` prefix) + mimetype + optional filename. */
+export interface OutboundAttachment {
+  data: string;
+  mimetype: string;
+  filename?: string;
+}
+
 // Response envelope paging block (search + list endpoints include `total`).
 export interface Paging {
   limit: number;

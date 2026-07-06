@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
+import { MessageMedia } from 'whatsapp-web.js';
 import { env } from '../config/env';
 import { logger } from '../logger';
 import { whatsappService } from '../whatsapp/client';
@@ -7,6 +8,7 @@ import { whitelistService } from '../whitelist/whitelist.service';
 import { groupService } from '../groups/group.service';
 import { messageService } from '../messages/message.service';
 import { buildRoutable } from '../whatsapp/message-mapper';
+import { storeOutboundMedia } from '../media/media.service';
 import { normalizeNumber, toChatId, toGroupChatId } from '../utils/phone';
 
 /**
@@ -44,17 +46,54 @@ outboundRouter.use((_req, res, next) => {
 // POST /outbound/send — { number, message } for a whitelisted contact, OR
 // { groupId, message } for a monitored group. Exactly one target. An optional
 // `quotedMessageId` (a stored message_id from the same thread) sends the reply
-// as a WhatsApp quote of that message.
+// as a WhatsApp quote of that message. An optional `attachment`
+// ({ data: base64, mimetype, filename? }) sends a media message — `message`
+// then becomes its caption (and may be omitted entirely for an unlabeled send).
 outboundRouter.post('/send', limiter, async (req, res, next) => {
   try {
-    const { number, message, groupId, quotedMessageId } = (req.body ?? {}) as {
+    const { number, message, groupId, quotedMessageId, attachment } = (req.body ?? {}) as {
       number?: unknown;
       message?: unknown;
       groupId?: unknown;
       quotedMessageId?: unknown;
+      attachment?: unknown;
     };
-    if (!message || (!number && !groupId)) {
-      res.status(400).json({ error: '"message" and one of "number" / "groupId" are required' });
+
+    const hasMessage = typeof message === 'string' && message.trim() !== '';
+
+    // Validated + size-capped BEFORE any whitelist lookup or WhatsApp send —
+    // cheapest checks first, and we never want to burn an irreversible send on
+    // a payload we'd reject anyway.
+    let media: { buffer: Buffer; base64: string; mimetype: string; filename?: string } | undefined;
+    if (attachment !== undefined) {
+      const a = attachment as { data?: unknown; mimetype?: unknown; filename?: unknown };
+      if (typeof a?.data !== 'string' || !a.data || typeof a?.mimetype !== 'string' || !a.mimetype) {
+        res
+          .status(400)
+          .json({ error: '"attachment" must be { data: base64 string, mimetype: string, filename?: string }' });
+        return;
+      }
+      const buffer = Buffer.from(a.data, 'base64');
+      if (buffer.length === 0) {
+        res.status(400).json({ error: '"attachment.data" decoded to an empty file' });
+        return;
+      }
+      if (env.OUTBOUND_MEDIA_MAX_BYTES > 0 && buffer.length > env.OUTBOUND_MEDIA_MAX_BYTES) {
+        res.status(413).json({ error: `Attachment exceeds the ${env.OUTBOUND_MEDIA_MAX_BYTES}-byte outbound limit` });
+        return;
+      }
+      media = {
+        buffer,
+        base64: a.data,
+        mimetype: a.mimetype,
+        filename: typeof a.filename === 'string' ? a.filename : undefined,
+      };
+    }
+
+    if ((!hasMessage && !media) || (!number && !groupId)) {
+      res
+        .status(400)
+        .json({ error: 'One of "message" / "attachment", and one of "number" / "groupId", are required' });
       return;
     }
 
@@ -95,16 +134,28 @@ outboundRouter.post('/send', limiter, async (req, res, next) => {
       return;
     }
 
-    const sent = await client.sendMessage(
-      chatId,
-      String(message),
-      quoteId ? { quotedMessageId: quoteId } : undefined,
+    const sent = media
+      ? await client.sendMessage(
+          chatId,
+          new MessageMedia(media.mimetype, media.base64, media.filename, media.buffer.length),
+          { caption: hasMessage ? String(message) : undefined, quotedMessageId: quoteId },
+        )
+      : await client.sendMessage(chatId, String(message), quoteId ? { quotedMessageId: quoteId } : undefined);
+    logger.warn(
+      { to: threadKey, messageId: sent.id._serialized, hasMedia: Boolean(media) },
+      'OUTBOUND message sent',
     );
-    logger.warn({ to: threadKey, messageId: sent.id._serialized }, 'OUTBOUND message sent');
+
+    // Store OUR OWN bytes when there's an attachment — never re-derive via
+    // sent.downloadMedia() (see buildRoutable's mediaOverride doc: it can
+    // block on WhatsApp's own upload pipeline or hand back a recompressed copy).
+    const storedMedia = media
+      ? await storeOutboundMedia(media.buffer, media.mimetype, threadKey, sent.id._serialized, media.filename)
+      : undefined;
 
     // Pin the thread key: `sent.to` can come back LID-addressed even when we
     // sent to the @c.us/@g.us chat id, and the target is already known.
-    const routable = await buildRoutable(sent, whatsappService.getOwnNumber(), threadKey);
+    const routable = await buildRoutable(sent, whatsappService.getOwnNumber(), threadKey, undefined, storedMedia);
     // Safety net: don't rely on the SDK's local echo re-deriving the quote.
     if (quoteId) routable.replyToMessageId = quoteId;
     await messageService.save(routable).catch((err) =>

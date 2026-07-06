@@ -30,6 +30,13 @@ const IGNORED_FLUSH_INTERVAL_MS = 30_000;
 function buildApp() {
   const app = express();
   app.use(helmet({ contentSecurityPolicy: false })); // inline QR data-url image
+
+  // Path-scoped, larger JSON limit for outbound attachments (base64 inflates
+  // raw bytes ~1.33x — see OUTBOUND_MEDIA_MAX_BYTES in config/env.ts). Must be
+  // mounted BEFORE the global 256kb parser below: body-parser only reads the
+  // request stream once, so whichever json() middleware runs first for a given
+  // request is the one that sets req.body — a later one just calls next().
+  app.use('/outbound', express.json({ limit: '25mb' }));
   app.use(express.json({ limit: '256kb' }));
 
   // Public health check (no auth) — useful for Docker/K8s probes.

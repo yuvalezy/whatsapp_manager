@@ -46,6 +46,11 @@ const envSchema = z.object({
   ENABLE_OUTBOUND: boolFlag(false),
   OUTBOUND_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   OUTBOUND_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  // Outbound attachments: hard-reject anything bigger than this BEFORE calling
+  // client.sendMessage (0 = unlimited). Checked pre-send, not best-effort —
+  // outbound can refuse. Base64 inflates raw bytes ~1.33x — keep comfortably
+  // under the express.json() limit set for /outbound in app.ts (25mb).
+  OUTBOUND_MEDIA_MAX_BYTES: z.coerce.number().int().nonnegative().default(16 * 1024 * 1024),
 
   // ── Authentication ───────────────────────────────────────────
   // Personal login (browser UI): a single user + scrypt password hash. When

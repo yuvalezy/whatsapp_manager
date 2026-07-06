@@ -2,7 +2,7 @@ import type { Message } from 'whatsapp-web.js';
 import { normalizeNumber } from '../utils/phone';
 import { detectLanguageHint } from '../utils/language';
 import { downloadAndStore } from '../media/media.service';
-import { RoutableMessage } from '../messages/message.model';
+import { RoutableMedia, RoutableMessage } from '../messages/message.model';
 
 /**
  * Maps a `whatsapp-web.js` Message into our canonical `RoutableMessage`,
@@ -37,12 +37,19 @@ export function contactNumberOf(message: Message): string {
  * `senderNumberOverride` pins the actual author for group messages, where the
  * thread key (contactNumber = group id) differs from who sent the message. For
  * 1:1 it is omitted and the sender collapses to the contact (or own number).
+ *
+ * `mediaOverride` skips `downloadAndStore` entirely when the caller already
+ * knows the media (outbound sends with an attachment already have the exact
+ * bytes they uploaded) — `message.downloadMedia()` on our own just-sent echo
+ * can block on WhatsApp's own upload pipeline or hand back a recompressed
+ * copy, so re-deriving it here would be both wasteful and untrustworthy.
  */
 export async function buildRoutable(
   message: Message,
   ownNumber: string,
   contactNumberOverride?: string,
   senderNumberOverride?: string,
+  mediaOverride?: RoutableMedia,
 ): Promise<RoutableMessage> {
   const fromMe = message.id.fromMe;
   const chatId = (fromMe ? message.to : message.from) ?? '';
@@ -62,7 +69,7 @@ export async function buildRoutable(
     }
   }
 
-  const media = await downloadAndStore(message, contactNumber);
+  const media = mediaOverride ?? (await downloadAndStore(message, contactNumber));
 
   // Reply/quote link. getQuotedMessage() is async but only fires when this
   // message actually quotes another; its id._serialized matches the format we

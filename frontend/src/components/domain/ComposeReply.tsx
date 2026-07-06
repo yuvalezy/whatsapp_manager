@@ -5,8 +5,23 @@ import { IconButton } from '@/components/ui/IconButton';
 import { useToast } from '@/components/ui/Toast';
 import { MessageTypeBadge } from './MessageTypeBadge';
 import { cn } from '@/lib/cn';
+import { fileToBase64 } from '@/lib/file';
+import { formatBytes } from '@/lib/format';
 import type { ComposeState, DraftReplyResult, StoredMessage } from '@/types';
 import { useDraftReply, useSendMessage } from '@/hooks/useDraftReply';
+
+interface StagedAttachment {
+  file: File;
+  previewUrl: string;
+  data: string;
+  mimetype: string;
+  filename?: string;
+}
+
+// Mirrors the backend's OUTBOUND_MEDIA_MAX_BYTES default (src/config/env.ts) —
+// a client-side fail-fast only; the server remains authoritative and its own
+// rejection would still surface through the existing onError toast either way.
+const MAX_ATTACHMENT_BYTES = 16 * 1024 * 1024;
 
 export interface ComposeReplyProps {
   contactNumber: string;
@@ -42,6 +57,10 @@ export function ComposeReply({
   const [translatedDraft, setTranslatedDraft] = useState('');
   const [targetLanguage, setTargetLanguage] = useState('es');
   const [sendingWhich, setSendingWhich] = useState<'english' | 'translated' | null>(null);
+  const [attachment, setAttachment] = useState<StagedAttachment | null>(null);
+  const attachmentRef = useRef<StagedAttachment | null>(null);
+  attachmentRef.current = attachment;
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
 
@@ -66,23 +85,85 @@ export function ComposeReply({
     if (replyTarget) textareaRef.current?.focus();
   }, [replyTarget]);
 
+  // Opening a conversation should land the cursor ready to type.
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  // Revoke a staged preview URL on unmount — this component remounts on every
+  // conversation switch (`key={selected}` in ConversationsPage.tsx), so this
+  // is a real leak path, not theoretical.
+  useEffect(() => {
+    return () => {
+      if (attachmentRef.current) URL.revokeObjectURL(attachmentRef.current.previewUrl);
+    };
+  }, []);
+
+  const clearAttachment = () => {
+    setAttachment((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+  };
+
+  const stageFile = async (file: File) => {
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      toast({
+        tone: 'danger',
+        title: 'File too large',
+        description: `Max ${Math.floor(MAX_ATTACHMENT_BYTES / (1024 * 1024))}MB`,
+      });
+      return;
+    }
+    try {
+      const encoded = await fileToBase64(file);
+      const previewUrl = URL.createObjectURL(file);
+      setAttachment((prev) => {
+        if (prev) URL.revokeObjectURL(prev.previewUrl); // single-attachment model: replace, don't stack
+        return { file, previewUrl, ...encoded };
+      });
+      if (composeState === 'idle') onComposeStateChange('composing');
+    } catch {
+      toast({ tone: 'danger', title: 'Could not read file' });
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (isBusy || showEditors) return; // attaching only allowed pre-generate
+    const item = Array.from(e.clipboardData?.items ?? []).find((it) => it.kind === 'file');
+    if (!item) return; // plain text paste — let the default happen
+    const file = item.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    void stageFile(file);
+  };
+
   const resetState = () => {
     setDraft('');
     setEnglishDraft('');
     setTranslatedDraft('');
     setSendingWhich(null);
+    clearAttachment();
     onComposeStateChange('idle');
     onClearReply();
   };
 
   const doSend = (text: string, which: 'english' | 'translated') => {
     const messageToSend = text.trim();
-    if (!messageToSend) return;
+    if (!messageToSend && !attachment) return;
     setSendingWhich(which);
     onComposeStateChange('sending');
     onSend?.();
     sendMessage.mutate(
-      { number: contactNumber, message: messageToSend, isGroup, quotedMessageId: replyTarget?.message_id },
+      {
+        number: contactNumber,
+        message: messageToSend,
+        isGroup,
+        quotedMessageId: replyTarget?.message_id,
+        attachment: attachment
+          ? { data: attachment.data, mimetype: attachment.mimetype, filename: attachment.filename }
+          : undefined,
+      },
       {
         onSuccess: () => {
           toast({ tone: 'success', title: 'Message sent' });
@@ -98,7 +179,7 @@ export function ComposeReply({
   };
 
   const handleGenerate = () => {
-    if (!draft.trim()) return;
+    if (!draft.trim() || attachment) return;
     onComposeStateChange('generating');
     draftReply.mutate(
       { number: contactNumber, draft: draft.trim(), messageCount },
@@ -118,9 +199,10 @@ export function ComposeReply({
   };
 
   const handleDirectSend = () => {
-    if (!draft.trim() || isBusy) return;
+    if ((!draft.trim() && !attachment) || isBusy) return;
     doSend(draft, 'english');
     setDraft('');
+    clearAttachment();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -227,6 +309,39 @@ export function ComposeReply({
       )}
 
       <div className={cn('px-4', showEditors ? 'pb-3' : 'py-3')}>
+        {attachment && (
+          <div className="mb-2 flex items-center gap-2 rounded-[10px] border border-line-strong bg-bg px-2 py-1.5">
+            {attachment.mimetype.startsWith('image/') ? (
+              <img src={attachment.previewUrl} alt="" className="h-10 w-10 shrink-0 rounded-[6px] object-cover" />
+            ) : (
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[6px] bg-surface-2">
+                <Icon
+                  name={
+                    attachment.mimetype.startsWith('video/')
+                      ? 'video'
+                      : attachment.mimetype.startsWith('audio/')
+                        ? 'mic'
+                        : 'fileText'
+                  }
+                  size={18}
+                  className="text-fg-muted"
+                />
+              </div>
+            )}
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-[12.5px] text-fg">{attachment.filename || 'attachment'}</span>
+              <span className="text-[11px] text-fg-muted">{formatBytes(attachment.file.size)}</span>
+            </div>
+            <IconButton
+              icon="x"
+              size="sm"
+              variant="ghost"
+              ariaLabel="Remove attachment"
+              onClick={clearAttachment}
+              disabled={isBusy}
+            />
+          </div>
+        )}
         <div className="flex items-start gap-2">
           <div className="flex flex-1 flex-col gap-1">
             <textarea
@@ -240,9 +355,14 @@ export function ComposeReply({
                 if (composeState === 'idle') onComposeStateChange('composing');
               }}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               disabled={isBusy}
               rows={1}
-              placeholder="Write what you want to say — AI will polish it into a natural reply…"
+              placeholder={
+                attachment
+                  ? 'Add a caption (optional)…'
+                  : 'Write what you want to say — AI will polish it into a natural reply…'
+              }
               className="w-full resize-none rounded-[10px] border border-line-strong bg-bg px-3 py-2 text-[13.5px] text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none disabled:opacity-60"
             />
             <div className="flex items-center gap-1.5 text-[11.5px] text-fg-muted">
@@ -272,13 +392,39 @@ export function ComposeReply({
           </div>
 
           <div className="flex items-start gap-1.5">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              disabled={isBusy || showEditors}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void stageFile(file);
+                e.target.value = ''; // allow re-selecting the same file later
+              }}
+            />
+            <IconButton
+              icon="paperclip"
+              ariaLabel="Attach file"
+              variant="solid"
+              size="sm"
+              disabled={isBusy || showEditors}
+              onClick={() => fileInputRef.current?.click()}
+            />
             <Button
               variant="secondary"
               size="sm"
               icon="sparkles"
               label="Generate"
               loading={composeState === 'generating'}
-              disabled={composeState === 'generating' || composeState === 'preview' || composeState === 'sending' || !draft.trim()}
+              disabled={
+                composeState === 'generating' ||
+                composeState === 'preview' ||
+                composeState === 'sending' ||
+                !draft.trim() ||
+                Boolean(attachment)
+              }
+              title={attachment ? 'Generate is disabled while a file is attached — use Send' : undefined}
               onClick={handleGenerate}
             />
             <Button
@@ -286,7 +432,12 @@ export function ComposeReply({
               size="sm"
               icon="send"
               label="Send"
-              disabled={!draft.trim() || composeState === 'generating' || composeState === 'preview' || composeState === 'sending'}
+              disabled={
+                (!draft.trim() && !attachment) ||
+                composeState === 'generating' ||
+                composeState === 'preview' ||
+                composeState === 'sending'
+              }
               onClick={handleDirectSend}
             />
           </div>

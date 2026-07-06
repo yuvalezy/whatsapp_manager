@@ -105,4 +105,50 @@ export async function downloadAndStore(
   }
 }
 
-export const mediaService = { downloadAndStore, absoluteMediaPath, isAudioType };
+/** Coarse media bucket from a mimetype prefix — the vocabulary MessageBubble's
+ *  BubbleMedia expects (image | video | audio | document). Outbound has no SDK
+ *  Message to classify from until *after* the send, so unlike downloadAndStore
+ *  (which trusts message.type) this derives it from what we're about to upload. */
+function mediaTypeForMimetype(mimetype: string): string {
+  const base = mimetype.split(';')[0].trim().toLowerCase();
+  if (base.startsWith('image/')) return 'image';
+  if (base.startsWith('video/')) return 'video';
+  if (base.startsWith('audio/')) return 'audio';
+  return 'document';
+}
+
+/**
+ * Store an already-decoded OUTBOUND attachment buffer. Unlike downloadAndStore,
+ * there is no SDK Message to call .downloadMedia() on — and no need for one:
+ * we already have the exact bytes we uploaded via MessageMedia. Never throws;
+ * a disk failure here can't be allowed to look like the WhatsApp send itself
+ * failed (it already succeeded), so failures degrade to status: 'failed' just
+ * like downloadAndStore does for inbound.
+ *
+ * The size cap is enforced by the CALLER before sending — by the time this
+ * runs the message is already delivered, so re-checking size here would be
+ * too late to reject; it would only downgrade an already-sent message's local
+ * copy to 'failed'.
+ */
+export async function storeOutboundMedia(
+  buffer: Buffer,
+  mimetype: string,
+  contactNumber: string,
+  messageId: string,
+  filename?: string,
+): Promise<RoutableMedia> {
+  const mediaType = mediaTypeForMimetype(mimetype);
+  try {
+    const ext = extensionForMimetype(mimetype, filename);
+    const dir = path.resolve(env.MEDIA_STORAGE_PATH, contactNumber);
+    fs.mkdirSync(dir, { recursive: true });
+    const relPath = path.join(contactNumber, `${safeName(messageId)}.${ext}`);
+    fs.writeFileSync(path.resolve(env.MEDIA_STORAGE_PATH, relPath), buffer);
+    return { mediaType, path: relPath, mimetype, filesize: buffer.length, status: 'downloaded' };
+  } catch (err) {
+    logger.error({ err, messageId, mediaType }, 'Failed to store outbound media');
+    return { mediaType, path: null, mimetype, filesize: buffer.length, status: 'failed' };
+  }
+}
+
+export const mediaService = { downloadAndStore, absoluteMediaPath, isAudioType, storeOutboundMedia };

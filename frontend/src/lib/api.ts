@@ -30,6 +30,7 @@ import type {
   HealthData,
   MessageSearchResult,
   MessageStats,
+  OutboundAttachment,
   Paging,
   PreferredLanguage,
   QrData,
@@ -332,15 +333,21 @@ export const api = {
 
   // Outbound send (gated by ENABLE_OUTBOUND, rate-limited). Contact must be
   // whitelisted; group must be monitored. `quotedMessageId` (a message_id from
-  // the same thread) sends the message as a WhatsApp quoted reply.
-  sendMessage: (number: string, message: string, quotedMessageId?: string) =>
+  // the same thread) sends the message as a WhatsApp quoted reply. `attachment`
+  // sends a media message with `message` as its caption (may be omitted).
+  sendMessage: (number: string, message: string, quotedMessageId?: string, attachment?: OutboundAttachment) =>
     request<{ messageId: string }>('/outbound/send', {
       method: 'POST',
-      body: JSON.stringify({ number, message, quotedMessageId }),
+      body: JSON.stringify({ number, message, quotedMessageId, attachment }),
     }),
-  sendGroupMessage: (groupId: string, message: string, quotedMessageId?: string) =>
+  sendGroupMessage: (
+    groupId: string,
+    message: string,
+    quotedMessageId?: string,
+    attachment?: OutboundAttachment,
+  ) =>
     request<{ messageId: string }>('/outbound/send', {
       method: 'POST',
-      body: JSON.stringify({ groupId, message, quotedMessageId }),
+      body: JSON.stringify({ groupId, message, quotedMessageId, attachment }),
     }),
 };
