@@ -199,7 +199,7 @@ async function handleMessage(
     const authorNumber = fromMe
       ? service.getOwnNumber()
       : await resolveContactNumber(client, message.author ?? from);
-    routable = await buildRoutable(message, service.getOwnNumber(), groupId, authorNumber);
+    routable = await buildRoutable(message, service.getOwnNumber(), groupId, authorNumber, undefined, client);
   } else {
     // 1:1 path. LID-addressed chats normalize to opaque digits that never match
     // the whitelist — resolve to the real phone number BEFORE the policy check.
@@ -213,7 +213,7 @@ async function handleMessage(
     // Same system-frame filter for whitelisted 1:1 (backfill already skips these).
     if (isSkippableType(String(message.type))) return;
 
-    routable = await buildRoutable(message, service.getOwnNumber(), contactNumber);
+    routable = await buildRoutable(message, service.getOwnNumber(), contactNumber, undefined, undefined, client);
   }
 
   // Live WhatsApp-side signals used only to gate the frontend's browser

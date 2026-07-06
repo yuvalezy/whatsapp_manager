@@ -23,6 +23,7 @@ import {
   DEFAULT_THREAD_PAGE,
 } from '@/hooks/useThreads';
 import { useStatus } from '@/hooks/useStatus';
+import { useWhitelist } from '@/hooks/useWhitelist';
 import { useSummarize } from '@/hooks/useSummaries';
 import { SummarizeModal } from '@/components/domain/SummarizeModal';
 import { SummaryHistoryModal } from '@/components/domain/SummaryHistoryModal';
@@ -62,6 +63,16 @@ export function ConversationsPage() {
     isError: threadsError,
     refetch: refetchThreads,
   } = useThreads();
+  const { data: whitelist } = useWhitelist();
+  // Resolved-mention display names: whitelisted @mentions show the app-curated
+  // name instead of the raw WhatsApp id/LID digits (see MessageBubble).
+  const whitelistNames = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const w of whitelist ?? []) {
+      map.set(w.phone_number, w.label || w.ezy_contact_name || w.ezy_bp_name || formatPhone(w.phone_number));
+    }
+    return map;
+  }, [whitelist]);
   const [searchParams, setSearchParams] = useSearchParams();
   const selected = searchParams.get('number');
   const { toast } = useToast();
@@ -601,6 +612,7 @@ export function ConversationsPage() {
                             activeMatch={activeMatchId != null && m.id === activeMatchId}
                             onReply={handleReply}
                             quotedMessage={m.reply_to_message_id ? quotedById.get(m.reply_to_message_id) : undefined}
+                            whitelistNames={whitelistNames}
                           />
                         </Fragment>
                       );

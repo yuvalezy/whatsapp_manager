@@ -173,6 +173,18 @@ export interface MessageMetadata {
   mentionsMe?: boolean;
 }
 
+/**
+ * A single @mention captured from a group message body. `id` matches the
+ * body's literal "@<id>" placeholder digits; `number` is the resolved real
+ * phone (LID-aware); `name` is the WhatsApp-reported display name captured at
+ * message time (pushname/name/verifiedName).
+ */
+export interface MessageMention {
+  id: string;
+  number: string;
+  name: string | null;
+}
+
 export interface StoredMessage {
   id: string | number;
   message_id: string;
@@ -207,6 +219,9 @@ export interface StoredMessage {
 
   /** message_id this message quotes/replies to, if any. */
   reply_to_message_id?: string | null;
+
+  /** @mentions parsed from a group message body, if any. */
+  mentions?: MessageMention[] | null;
 }
 
 export interface CredentialSummary {

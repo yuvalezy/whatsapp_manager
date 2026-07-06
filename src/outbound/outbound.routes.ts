@@ -155,7 +155,14 @@ outboundRouter.post('/send', limiter, async (req, res, next) => {
 
     // Pin the thread key: `sent.to` can come back LID-addressed even when we
     // sent to the @c.us/@g.us chat id, and the target is already known.
-    const routable = await buildRoutable(sent, whatsappService.getOwnNumber(), threadKey, undefined, storedMedia);
+    const routable = await buildRoutable(
+      sent,
+      whatsappService.getOwnNumber(),
+      threadKey,
+      undefined,
+      storedMedia,
+      client,
+    );
     // Safety net: don't rely on the SDK's local echo re-deriving the quote.
     if (quoteId) routable.replyToMessageId = quoteId;
     await messageService.save(routable).catch((err) =>

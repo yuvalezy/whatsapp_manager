@@ -7,6 +7,7 @@ import { sseManager } from '../sse';
 import {
   MessageDirection,
   PendingTranscription,
+  RoutableMention,
   RoutableMessage,
   StoredMessage,
   TranscriptionStatus,
@@ -22,7 +23,7 @@ const SELECT_COLS = `
   media_type, media_path, media_mimetype, media_filesize, media_status,
   transcript, transcript_language, transcript_translated, transcription_status,
   translated_body, translation_status,
-  ack, reply_to_message_id, edited_at, is_deleted, deleted_at
+  ack, reply_to_message_id, edited_at, is_deleted, deleted_at, mentions
 `;
 
 /** Optional filters for the incremental-sync message list. All optional. */
@@ -95,8 +96,8 @@ class MessageService {
          (message_id, chat_id, contact_number, sender_number, sender_name, body,
           message_type, direction, timestamp, metadata, detected_language,
           media_type, media_path, media_mimetype, media_filesize, media_status,
-          transcription_status, ack, reply_to_message_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+          transcription_status, ack, reply_to_message_id, mentions)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        ON CONFLICT (message_id) DO NOTHING`,
       [
         msg.messageId,
@@ -118,6 +119,7 @@ class MessageService {
         transcriptionStatus,
         msg.ack ?? null,
         msg.replyToMessageId ?? null,
+        msg.mentions?.length ? JSON.stringify(msg.mentions) : null,
       ],
     );
     const inserted = (rowCount ?? 0) > 0;
@@ -544,6 +546,21 @@ class MessageService {
     const { rowCount } = await query(
       `UPDATE messages SET body = $2, edited_at = $3 WHERE message_id = $1`,
       [messageId, newBody, editedAt],
+    );
+    if ((rowCount ?? 0) > 0) await this.broadcastUpdated(messageId);
+  }
+
+  /**
+   * Retroactively fill @mentions onto a row captured before mention resolution
+   * existed. Only touches rows where `mentions` is still null, so it never
+   * overwrites anything and is safe to call unconditionally from backfill —
+   * unlike `save()`'s INSERT ... ON CONFLICT DO NOTHING, this is a plain UPDATE
+   * and doesn't affect the "newly inserted" semantics `save()` relies on.
+   */
+  async backfillMentions(messageId: string, mentions: RoutableMention[]): Promise<void> {
+    const { rowCount } = await query(
+      `UPDATE messages SET mentions = $2 WHERE message_id = $1 AND mentions IS NULL`,
+      [messageId, JSON.stringify(mentions)],
     );
     if ((rowCount ?? 0) > 0) await this.broadcastUpdated(messageId);
   }

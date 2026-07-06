@@ -6,9 +6,9 @@ import { MessageTypeBadge } from './MessageTypeBadge';
 import { MessageBubbleActions } from './MessageBubbleActions';
 import { ImageLightbox } from './ImageLightbox';
 import { cn } from '@/lib/cn';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime, formatPhone } from '@/lib/format';
 import { api } from '@/lib/api';
-import type { StoredMessage } from '@/types';
+import type { MessageMention, StoredMessage } from '@/types';
 
 // ============================================================================
 // MessageBubble — one WhatsApp-style chat bubble: media, body/transcript,
@@ -31,6 +31,8 @@ export interface MessageBubbleProps {
   onReply: (message: StoredMessage) => void;
   /** The message this one quotes, when it's loaded within the current thread window. */
   quotedMessage?: StoredMessage;
+  /** phone_number → display name, for resolving @mentions to whitelisted contacts. */
+  whitelistNames?: Map<string, string>;
 }
 
 export function MessageBubble({
@@ -41,6 +43,7 @@ export function MessageBubble({
   activeMatch = false,
   onReply,
   quotedMessage,
+  whitelistNames,
 }: MessageBubbleProps) {
   const isOutbound = msg.direction === 'outbound';
   const hasMediaFile = msg.media_status === 'downloaded';
@@ -86,7 +89,12 @@ export function MessageBubble({
         {hasMediaFile && <BubbleMedia message={msg} />}
         {hasBody && (
           <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed">
-            <HighlightText text={msg.body ?? ''} term={findTerm} whole />
+            <MessageBodyText
+              body={msg.body ?? ''}
+              mentions={msg.mentions}
+              whitelistNames={whitelistNames}
+              findTerm={findTerm}
+            />
           </p>
         )}
         {(msg.message_type === 'ptt' || msg.message_type === 'audio') && (
@@ -114,6 +122,69 @@ export function MessageBubble({
       </div>
       {!isOutbound && <MessageBubbleActions message={msg} align="start" onReply={onReply} />}
     </div>
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Display text for one resolved @mention, in priority order: the whitelisted
+ * contact's app-curated name, then the WhatsApp-reported name captured at
+ * message time, then a formatted phone number (resolved but not whitelisted/
+ * named), then the raw placeholder digits unchanged (nothing resolved).
+ */
+function mentionDisplayText(mention: MessageMention, whitelistNames?: Map<string, string>): string {
+  const name =
+    whitelistNames?.get(mention.number) ??
+    mention.name ??
+    (mention.number !== mention.id ? formatPhone(mention.number) : mention.id);
+  return `@${name}`;
+}
+
+/**
+ * Renders a message body, replacing each captured @mention's raw "@<id>"
+ * placeholder with its resolved display name (see mentionDisplayText).
+ * Falls straight through to HighlightText when there are no mentions — the
+ * common case stays exactly as before. Plain-text segments around/between
+ * mentions still run through HighlightText so in-thread find still works.
+ */
+function MessageBodyText({
+  body,
+  mentions,
+  whitelistNames,
+  findTerm,
+}: {
+  body: string;
+  mentions?: MessageMention[] | null;
+  whitelistNames?: Map<string, string>;
+  findTerm?: string;
+}) {
+  if (!mentions?.length) {
+    return <HighlightText text={body} term={findTerm} whole />;
+  }
+
+  // Longest id first so a shorter id can't shadow-match a prefix of a longer one.
+  const sorted = [...mentions].sort((a, b) => b.id.length - a.id.length);
+  const pattern = new RegExp(`@(${sorted.map((m) => escapeRegExp(m.id)).join('|')})`, 'g');
+  const byId = new Map(mentions.map((m) => [m.id, m]));
+  const parts = body.split(pattern);
+
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (i % 2 === 1) {
+          const mention = byId.get(part);
+          return (
+            <span key={i} className="font-semibold text-primary">
+              {mention ? mentionDisplayText(mention, whitelistNames) : `@${part}`}
+            </span>
+          );
+        }
+        return part ? <HighlightText key={i} text={part} term={findTerm} whole /> : null;
+      })}
+    </>
   );
 }
 

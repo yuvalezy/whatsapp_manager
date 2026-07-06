@@ -1,8 +1,9 @@
-import type { Message } from 'whatsapp-web.js';
+import type { Client, Contact, Message } from 'whatsapp-web.js';
 import { normalizeNumber } from '../utils/phone';
 import { detectLanguageHint } from '../utils/language';
 import { downloadAndStore } from '../media/media.service';
-import { RoutableMedia, RoutableMessage } from '../messages/message.model';
+import { resolveContactNumber } from './lid-resolver';
+import { RoutableMedia, RoutableMention, RoutableMessage } from '../messages/message.model';
 
 /**
  * Maps a `whatsapp-web.js` Message into our canonical `RoutableMessage`,
@@ -43,6 +44,12 @@ export function contactNumberOf(message: Message): string {
  * bytes they uploaded) — `message.downloadMedia()` on our own just-sent echo
  * can block on WhatsApp's own upload pipeline or hand back a recompressed
  * copy, so re-deriving it here would be both wasteful and untrustworthy.
+ *
+ * `client` is used to resolve any @mentions in the body (`message.mentionedIds`)
+ * to a real phone number — LID-aware, same as author/contact resolution above —
+ * so the frontend can cross-reference the whitelist. Omitted only when no live
+ * client is available; mentions then fall back to their raw (possibly LID)
+ * digits, unresolved.
  */
 export async function buildRoutable(
   message: Message,
@@ -50,6 +57,7 @@ export async function buildRoutable(
   contactNumberOverride?: string,
   senderNumberOverride?: string,
   mediaOverride?: RoutableMedia,
+  client?: Client | null,
 ): Promise<RoutableMessage> {
   const fromMe = message.id.fromMe;
   const chatId = (fromMe ? message.to : message.from) ?? '';
@@ -70,6 +78,33 @@ export async function buildRoutable(
   }
 
   const media = mediaOverride ?? (await downloadAndStore(message, contactNumber));
+
+  // @mentions: `id` mirrors the body's literal "@<id>" placeholder digits;
+  // `number` resolves LID-aware (same as senderName/author above) so the
+  // frontend can match against the whitelist; `name` is the WhatsApp contact's
+  // own display name, captured now (same pushname/name/verifiedName fallback
+  // as senderName) so a non-whitelisted mention still shows a real name.
+  let mentions: RoutableMention[] | undefined;
+  if (message.mentionedIds?.length) {
+    let mentionContacts: Contact[] = [];
+    try {
+      mentionContacts = await message.getMentions();
+    } catch {
+      /* contact lookup is optional, same as senderName above */
+    }
+    mentions = [];
+    for (const rawId of message.mentionedIds as unknown as (string | { _serialized: string })[]) {
+      // Despite the `string[]` type, whatsapp-web.js's own getMentions() (above)
+      // shows entries can also arrive as WID objects — same defensive unwrap.
+      const jid = typeof rawId === 'string' ? rawId : rawId._serialized;
+      if (!jid) continue;
+      const id = normalizeNumber(jid);
+      const number = client ? await resolveContactNumber(client, jid) : id;
+      const contact = mentionContacts.find((c) => c.id._serialized === jid);
+      const name = contact ? contact.pushname || contact.name || contact.verifiedName || null : null;
+      mentions.push({ id, number, name });
+    }
+  }
 
   // Reply/quote link. getQuotedMessage() is async but only fires when this
   // message actually quotes another; its id._serialized matches the format we
@@ -99,6 +134,7 @@ export async function buildRoutable(
     ack: message.ack,
     replyToMessageId,
     media,
+    mentions,
     metadata: {
       hasMedia: message.hasMedia,
       isForwarded: message.isForwarded,

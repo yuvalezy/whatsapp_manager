@@ -74,11 +74,15 @@ class BackfillService {
       this.status.processed += 1;
       try {
         // Pin to the chat we're backfilling (fetched messages may be LID-addressed).
-        const routable = await buildRoutable(message, ownNumber, number);
+        const routable = await buildRoutable(message, ownNumber, number, undefined, undefined, client);
         const inserted = await messageService.save(routable);
         if (inserted) {
           saved += 1;
           this.status.saved += 1;
+        } else if (routable.mentions?.length) {
+          // Row already existed (e.g. captured before mention resolution shipped) —
+          // retroactively fill in mentions without touching anything else on it.
+          await messageService.backfillMentions(routable.messageId, routable.mentions).catch(() => {});
         }
       } catch (err) {
         logger.error({ err, messageId: message.id?._serialized }, 'Backfill: failed to store message');
@@ -129,11 +133,15 @@ class BackfillService {
         const authorNumber = message.id.fromMe
           ? ownNumber
           : await resolveContactNumber(client, message.author ?? message.from ?? '');
-        const routable = await buildRoutable(message, ownNumber, groupId, authorNumber);
+        const routable = await buildRoutable(message, ownNumber, groupId, authorNumber, undefined, client);
         const inserted = await messageService.save(routable);
         if (inserted) {
           saved += 1;
           this.status.saved += 1;
+        } else if (routable.mentions?.length) {
+          // Row already existed (e.g. captured before mention resolution shipped) —
+          // retroactively fill in mentions without touching anything else on it.
+          await messageService.backfillMentions(routable.messageId, routable.mentions).catch(() => {});
         }
       } catch (err) {
         logger.error({ err, messageId: message.id?._serialized }, 'Backfill: failed to store group message');

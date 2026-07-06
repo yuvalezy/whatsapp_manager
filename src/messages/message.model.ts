@@ -27,6 +27,19 @@ export interface MessageMetadata {
 }
 
 /**
+ * A single @mention captured from a group message body. `id` matches the
+ * body's literal "@<id>" placeholder digits; `number` is the resolved real
+ * phone (LID-aware, via lid-resolver.ts); `name` is the WhatsApp-reported
+ * display name at capture time (pushname/name/verifiedName — same convention
+ * as senderName: resolved once, frozen thereafter).
+ */
+export interface RoutableMention {
+  id: string;
+  number: string;
+  name: string | null;
+}
+
+/**
  * Canonical, transport-agnostic message shape used across the app.
  * The WhatsApp layer maps `whatsapp-web.js` Message objects into this,
  * so nothing downstream depends on the WhatsApp SDK.
@@ -49,6 +62,8 @@ export interface RoutableMessage {
   ack?: number | null;
   /** message_id of the message this one quotes/replies to, if any. */
   replyToMessageId?: string | null;
+  /** @mentions parsed from a group message body, if any. */
+  mentions?: RoutableMention[];
 }
 
 /** Row shape as returned from the `messages` table. */
@@ -93,6 +108,8 @@ export interface StoredMessage {
   /** Soft-delete: true once the sender revoked ("delete for everyone") the message. */
   is_deleted: boolean;
   deleted_at: string | null;
+  /** @mentions parsed from a group message body, if any. */
+  mentions: RoutableMention[] | null;
 }
 
 /** Minimal projection used by the transcription worker. */
