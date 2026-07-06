@@ -33,6 +33,8 @@ export interface MessageBubbleProps {
   quotedMessage?: StoredMessage;
   /** phone_number → display name, for resolving @mentions to whitelisted contacts. */
   whitelistNames?: Map<string, string>;
+  /** The connected WhatsApp account's own number — an @mention of it displays as "You". */
+  ownNumber?: string;
   /** Click a resolved @mention → open/whitelist that person (handled by the page). */
   onMentionClick?: (mention: MessageMention) => void;
   /** Click the quoted-reply strip → scroll to the original message (by message_id). */
@@ -50,6 +52,7 @@ export function MessageBubble({
   onReply,
   quotedMessage,
   whitelistNames,
+  ownNumber,
   onMentionClick,
   onQuoteJump,
   flash = false,
@@ -100,6 +103,7 @@ export function MessageBubble({
           <QuotedSnippet
             message={quotedMessage}
             whitelistNames={whitelistNames}
+            ownNumber={ownNumber}
             onJump={onQuoteJump ? () => onQuoteJump(quotedMessage.message_id) : undefined}
           />
         )}
@@ -110,6 +114,7 @@ export function MessageBubble({
               body={msg.body ?? ''}
               mentions={msg.mentions}
               whitelistNames={whitelistNames}
+              ownNumber={ownNumber}
               findTerm={findTerm}
               onMentionClick={onMentionClick}
             />
@@ -148,12 +153,15 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * Display text for one resolved @mention, in priority order: the whitelisted
- * contact's app-curated name, then the WhatsApp-reported name captured at
- * message time, then a formatted phone number (resolved but not whitelisted/
- * named), then the raw placeholder digits unchanged (nothing resolved).
+ * Display text for one resolved @mention, in priority order: the connected
+ * account's own number ("You" — mirrors the `senderName` convention for own
+ * outbound messages), the whitelisted contact's app-curated name, then the
+ * WhatsApp-reported name captured at message time, then a formatted phone
+ * number (resolved but not whitelisted/named), then the raw placeholder
+ * digits unchanged (nothing resolved).
  */
-function mentionDisplayText(mention: MessageMention, whitelistNames?: Map<string, string>): string {
+function mentionDisplayText(mention: MessageMention, whitelistNames?: Map<string, string>, ownNumber?: string): string {
+  if (ownNumber && mention.number === ownNumber) return '@You';
   const name =
     whitelistNames?.get(mention.number) ??
     mention.name ??
@@ -172,12 +180,14 @@ export function MessageBodyText({
   body,
   mentions,
   whitelistNames,
+  ownNumber,
   findTerm,
   onMentionClick,
 }: {
   body: string;
   mentions?: MessageMention[] | null;
   whitelistNames?: Map<string, string>;
+  ownNumber?: string;
   findTerm?: string;
   onMentionClick?: (mention: MessageMention) => void;
 }) {
@@ -197,10 +207,12 @@ export function MessageBodyText({
         if (i % 2 === 1) {
           const mention = byId.get(part);
           if (!mention) return <span key={i} className="font-semibold text-primary">{`@${part}`}</span>;
-          const label = mentionDisplayText(mention, whitelistNames);
+          const label = mentionDisplayText(mention, whitelistNames, ownNumber);
           // Clickable only when we have a real number to act on (a failed-LID
-          // fallback leaves number === id, an over-long opaque digit string).
-          const clickable = onMentionClick && isUsableNumber(mention.number);
+          // fallback leaves number === id, an over-long opaque digit string) and
+          // it isn't the account's own number — there's no thread to jump to and
+          // nothing to whitelist for "You".
+          const clickable = onMentionClick && isUsableNumber(mention.number) && mention.number !== ownNumber;
           return clickable ? (
             <button
               key={i}
@@ -234,10 +246,12 @@ function isUsableNumber(number: string): boolean {
 function QuotedSnippet({
   message,
   whitelistNames,
+  ownNumber,
   onJump,
 }: {
   message: StoredMessage;
   whitelistNames?: Map<string, string>;
+  ownNumber?: string;
   onJump?: () => void;
 }) {
   const bodyText = message.body?.trim();
@@ -250,7 +264,12 @@ function QuotedSnippet({
       {text ? (
         <span className="line-clamp-2">
           {bodyText ? (
-            <MessageBodyText body={bodyText} mentions={message.mentions} whitelistNames={whitelistNames} />
+            <MessageBodyText
+              body={bodyText}
+              mentions={message.mentions}
+              whitelistNames={whitelistNames}
+              ownNumber={ownNumber}
+            />
           ) : (
             text
           )}

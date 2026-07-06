@@ -132,6 +132,9 @@ export function ConversationsPage() {
 
   const { data: status } = useStatus();
   const outboundEnabled = status?.outboundEnabled ?? false;
+  // The connected account's own number — an @mention of it should read as
+  // "You" rather than a bare phone number (see whitelistNames/MessageBubble).
+  const ownNumber = normalizeNumber(status?.wid ?? '');
 
   // Default to the most-recent conversation if none is selected.
   useEffect(() => {
@@ -669,6 +672,7 @@ export function ConversationsPage() {
                             onReply={handleReply}
                             quotedMessage={m.reply_to_message_id ? quotedById.get(m.reply_to_message_id) : undefined}
                             whitelistNames={whitelistNames}
+                            ownNumber={ownNumber}
                             onMentionClick={handleMentionClick}
                             onQuoteJump={handleQuoteJump}
                             flash={flashedId === m.message_id}
