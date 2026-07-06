@@ -13,6 +13,19 @@ export interface RoutableMedia {
   status: MediaStatus;
 }
 
+/** Free-form per-message flags captured at ingestion time. */
+export interface MessageMetadata {
+  hasMedia?: boolean;
+  isForwarded?: boolean;
+  deviceType?: string;
+  isGroup?: boolean;
+  fromMe?: boolean;
+  /** Live WhatsApp mute state of this chat at the time the message arrived. */
+  chatMuted?: boolean;
+  /** Whether this message @mentions our own linked account. */
+  mentionsMe?: boolean;
+}
+
 /**
  * Canonical, transport-agnostic message shape used across the app.
  * The WhatsApp layer maps `whatsapp-web.js` Message objects into this,
@@ -31,7 +44,7 @@ export interface RoutableMessage {
   timestamp: Date;
   detectedLanguage?: string;
   media?: RoutableMedia;
-  metadata?: Record<string, unknown>;
+  metadata?: MessageMetadata;
   /** WhatsApp delivery ack (outbound): -1 error, 1 sent, 2 delivered, 3 read, 4 played. */
   ack?: number | null;
   /** message_id of the message this one quotes/replies to, if any. */
@@ -52,6 +65,7 @@ export interface StoredMessage {
   timestamp: string;
   created_at: string;
   updated_at: string;
+  metadata: MessageMetadata | null;
 
   detected_language: string | null;
 

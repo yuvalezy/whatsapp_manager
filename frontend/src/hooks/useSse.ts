@@ -56,9 +56,12 @@ export function useSse() {
         qc.invalidateQueries({ queryKey: ['messages', 'by-number', normalized] });
         qc.invalidateQueries({ queryKey: ['threads'] });
 
-        // Notify on inbound messages the user isn't actively watching.
+        // Notify on inbound messages the user isn't actively watching, unless
+        // the chat is muted in WhatsApp itself and we weren't @mentioned.
         const isOpenAndVisible = normalized === openThreadRef.current && !document.hidden;
-        if (msg.direction === 'inbound' && !isOpenAndVisible) {
+        const muted = !!msg.metadata?.chatMuted;
+        const mentionsMe = !!msg.metadata?.mentionsMe;
+        if (msg.direction === 'inbound' && !isOpenAndVisible && !(muted && !mentionsMe)) {
           const thread = qc
             .getQueryData<ConversationThread[]>(['threads'])
             ?.find((t) => t.id === normalized);

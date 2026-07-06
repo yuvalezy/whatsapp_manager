@@ -160,6 +160,19 @@ export type MediaStatus = 'none' | 'pending' | 'downloaded' | 'failed' | 'expire
 export type TranscriptionStatus = 'none' | 'pending' | 'done' | 'failed';
 export type TranslationStatus = 'none' | 'pending' | 'done' | 'failed' | 'skipped';
 
+/** Free-form per-message flags captured at ingestion time. */
+export interface MessageMetadata {
+  hasMedia?: boolean;
+  isForwarded?: boolean;
+  deviceType?: string;
+  isGroup?: boolean;
+  fromMe?: boolean;
+  /** Live WhatsApp mute state of this chat at the time the message arrived. */
+  chatMuted?: boolean;
+  /** Whether this message @mentions our own linked account. */
+  mentionsMe?: boolean;
+}
+
 export interface StoredMessage {
   id: string | number;
   message_id: string;
@@ -172,7 +185,7 @@ export interface StoredMessage {
   direction: 'inbound' | 'outbound';
   timestamp: string;
   created_at: string;
-  metadata?: Record<string, unknown> | null;
+  metadata?: MessageMetadata | null;
 
   detected_language?: string | null;
 
@@ -218,6 +231,8 @@ export interface ConversationThread {
   lastMessage: StoredMessage | null;
   /** Count of inbound messages received since this thread was last opened. */
   unread: number;
+  /** Live WhatsApp mute state for this chat. */
+  muted: boolean;
 }
 
 export interface TranslateAllResult {

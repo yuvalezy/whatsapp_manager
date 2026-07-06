@@ -10,7 +10,7 @@ import { groupService } from '../groups/group.service';
 import { readStateService } from '../reads/read-state.service';
 import { costService } from '../costs/cost.service';
 import { whatsappService } from '../whatsapp/client';
-import { toChatId, toGroupChatId } from '../utils/phone';
+import { normalizeNumber, toChatId, toGroupChatId } from '../utils/phone';
 import { env } from '../config/env';
 import { summaryService } from '../summaries/summary.service';
 import { summarizationService } from '../enrichment/summarization.service';
@@ -159,6 +159,41 @@ messagesRouter.get('/export', async (req, res, next) => {
   }
 });
 
+/**
+ * Best-effort live WhatsApp mute lookup for every thread, keyed by the same
+ * normalized ids used elsewhere (phone number for contacts, group id for
+ * groups). One batched `getChats()` call, mirroring the GET /contacts and
+ * GET /groups/available pattern. Never fails the /threads request — falls
+ * back to "nothing muted" if the client isn't ready or the lookup errors.
+ */
+async function getMutedThreadIds(): Promise<Set<string>> {
+  const client = whatsappService.getClient();
+  if (!client || whatsappService.getState() !== 'READY') return new Set();
+  try {
+    const mutedChats = (await client.getChats()).filter((c) => c.isMuted);
+    // Only resolve LIDs we actually need (muted 1:1 chats), same as GET /contacts.
+    const lidIds = mutedChats
+      .filter((c) => !c.isGroup && c.id.server === 'lid')
+      .map((c) => c.id._serialized);
+    const resolved = lidIds.length > 0 ? await client.getContactLidAndPhone(lidIds) : [];
+    const lidToPhone = new Map(resolved.map((r) => [r.lid, normalizeNumber(r.pn)]));
+
+    const muted = new Set<string>();
+    for (const c of mutedChats) {
+      const id = c.isGroup
+        ? normalizeNumber(c.id._serialized)
+        : c.id.server === 'lid'
+          ? (lidToPhone.get(c.id._serialized) ?? normalizeNumber(c.id.user))
+          : normalizeNumber(c.id.user);
+      if (id) muted.add(id);
+    }
+    return muted;
+  } catch (err) {
+    logger.error({ err }, 'Failed to fetch WhatsApp mute state for threads');
+    return new Set();
+  }
+}
+
 // GET /messages/threads — one row per monitored conversation (whitelisted
 // contacts + monitored groups), each with its latest message, sorted by
 // recency, for the Conversations inbox view. `id` is the thread key
@@ -166,11 +201,12 @@ messagesRouter.get('/export', async (req, res, next) => {
 // /messages/:number expects.
 messagesRouter.get('/threads', async (_req, res, next) => {
   try {
-    const [contacts, groups, latest, reads] = await Promise.all([
+    const [contacts, groups, latest, reads, mutedIds] = await Promise.all([
       whitelistService.list(),
       groupService.list(),
       messageService.listThreads(),
       readStateService.list(),
+      getMutedThreadIds(),
     ]);
     const byNumber = new Map(latest.map((m) => [m.contact_number, m]));
     const readAt = new Map(reads.map((r) => [r.thread_id, r.last_read_at]));
@@ -187,6 +223,7 @@ messagesRouter.get('/threads', async (_req, res, next) => {
       bp: c.ezy_bp_name ?? null,
       lastMessage: byNumber.get(c.phone_number) ?? null,
       unread: unread.get(c.phone_number) ?? 0,
+      muted: mutedIds.has(c.phone_number),
     }));
     const groupThreads = groups.map((g) => ({
       type: 'group' as const,
@@ -195,6 +232,7 @@ messagesRouter.get('/threads', async (_req, res, next) => {
       bp: g.ezy_bp_name ?? null,
       lastMessage: byNumber.get(g.group_id) ?? null,
       unread: unread.get(g.group_id) ?? 0,
+      muted: mutedIds.has(g.group_id),
     }));
 
     const threads = [...contactThreads, ...groupThreads].sort((a, b) => {

@@ -71,6 +71,11 @@ export function ConversationList({ threads, selected, onSelect, loading }: Conve
                 <span className="flex min-w-0 items-center gap-1.5">
                   {t.type === 'group' && <Icon name="users" size={13} className="shrink-0 text-fg-muted" />}
                   <span className="truncate text-[13.5px] font-bold text-fg">{name}</span>
+                  {t.muted && (
+                    <span title="Muted">
+                      <Icon name="bellOff" size={12} className="shrink-0 text-fg-muted" />
+                    </span>
+                  )}
                 </span>
                 {t.lastMessage && (
                   <RelativeTime timestamp={t.lastMessage.timestamp} fontSize="11px" className="shrink-0" />

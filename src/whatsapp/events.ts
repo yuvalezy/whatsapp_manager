@@ -8,6 +8,7 @@ import { ignoredStats } from '../messages/ignored-stats';
 import { messageService } from '../messages/message.service';
 import { reactionService } from '../reactions/reaction.service';
 import { MessageRouter } from '../router/message-router';
+import type { RoutableMessage } from '../messages/message.model';
 import { buildRoutable, contactJidOf } from './message-mapper';
 import { isSkippableType } from './message-types';
 import { resolveContactNumber } from './lid-resolver';
@@ -182,6 +183,8 @@ async function handleMessage(
     return;
   }
 
+  let routable: RoutableMessage;
+
   if (isGroup) {
     const groupId = normalizeNumber(chatJid);
     if (!groupService.isMonitored(groupId)) {
@@ -196,23 +199,44 @@ async function handleMessage(
     const authorNumber = fromMe
       ? service.getOwnNumber()
       : await resolveContactNumber(client, message.author ?? from);
-    const routable = await buildRoutable(message, service.getOwnNumber(), groupId, authorNumber);
-    await router.route(routable);
-    return;
+    routable = await buildRoutable(message, service.getOwnNumber(), groupId, authorNumber);
+  } else {
+    // 1:1 path. LID-addressed chats normalize to opaque digits that never match
+    // the whitelist — resolve to the real phone number BEFORE the policy check.
+    const contactNumber = await resolveContactNumber(client, contactJidOf(message));
+    if (!whitelistService.isWhitelisted(contactNumber)) {
+      // Count inbound noise; drop our own outbound to non-whitelisted silently.
+      if (!fromMe) ignoredStats.increment('not_whitelisted');
+      return;
+    }
+
+    // Same system-frame filter for whitelisted 1:1 (backfill already skips these).
+    if (isSkippableType(String(message.type))) return;
+
+    routable = await buildRoutable(message, service.getOwnNumber(), contactNumber);
   }
 
-  // 1:1 path. LID-addressed chats normalize to opaque digits that never match
-  // the whitelist — resolve to the real phone number BEFORE the policy check.
-  const contactNumber = await resolveContactNumber(client, contactJidOf(message));
-  if (!whitelistService.isWhitelisted(contactNumber)) {
-    // Count inbound noise; drop our own outbound to non-whitelisted silently.
-    if (!fromMe) ignoredStats.increment('not_whitelisted');
-    return;
+  // Live WhatsApp-side signals used only to gate the frontend's browser
+  // notification: respect the account's own mute setting for this chat,
+  // unless we were personally @mentioned (LID-aware, same resolution as
+  // author attribution above). Skipped for our own outbound — nothing to
+  // notify on, and avoids a wasted live lookup.
+  if (!fromMe) {
+    const [chat, mentionsMe] = await Promise.all([
+      message.getChat().catch(() => null),
+      mentionsOwner(client, message, service.getOwnNumber()),
+    ]);
+    routable.metadata = { ...routable.metadata, chatMuted: chat?.isMuted ?? false, mentionsMe };
   }
 
-  // Same system-frame filter for whitelisted 1:1 (backfill already skips these).
-  if (isSkippableType(String(message.type))) return;
-
-  const routable = await buildRoutable(message, service.getOwnNumber(), contactNumber);
   await router.route(routable);
+}
+
+/** Whether this message @mentions our own account (LID-aware). */
+async function mentionsOwner(client: Client, message: Message, ownNumber: string): Promise<boolean> {
+  if (!message.mentionedIds?.length) return false;
+  const resolved = await Promise.all(
+    message.mentionedIds.map((jid) => resolveContactNumber(client, jid)),
+  );
+  return resolved.includes(ownNumber);
 }

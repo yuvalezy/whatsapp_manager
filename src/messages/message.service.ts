@@ -17,7 +17,7 @@ const LANGUAGE_VOTES: readonly PreferredLanguage[] = ['es', 'en', 'he'];
 
 const SELECT_COLS = `
   id, message_id, chat_id, contact_number, sender_number, sender_name,
-  body, message_type, direction, timestamp, created_at, updated_at,
+  body, message_type, direction, timestamp, created_at, updated_at, metadata,
   detected_language,
   media_type, media_path, media_mimetype, media_filesize, media_status,
   transcript, transcript_language, transcript_translated, transcription_status,

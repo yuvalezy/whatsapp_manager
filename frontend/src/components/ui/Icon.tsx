@@ -373,6 +373,14 @@ const ICONS = {
       <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
     </>
   ),
+  bellOff: (
+    <>
+      <path d="M8.56 2.9A7 7 0 0 1 19 9v4a9.7 9.7 0 0 0 .8 3.2" />
+      <path d="M17.7 17H4s3-2 3-8a5.5 5.5 0 0 1 .4-2.1" />
+      <path d="M9.7 21a2.3 2.3 0 0 0 4 0" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;
