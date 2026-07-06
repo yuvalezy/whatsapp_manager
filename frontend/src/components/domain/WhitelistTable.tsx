@@ -13,15 +13,22 @@ import { compareValues, matchesSearch } from '@/lib/tableUtils';
 import { useSortState } from '@/hooks/useSortState';
 import { PhoneNumber } from './PhoneNumber';
 import { RelativeTime } from './RelativeTime';
-import type { PreferredLanguage, WhitelistEntry } from '@/types';
+import type { Gender, PreferredLanguage, WhitelistEntry } from '@/types';
 
 const LANGUAGE_LABEL: Record<PreferredLanguage, string> = { es: 'ES', en: 'EN', he: 'HE' };
+const GENDER_LABEL: Record<Gender, string> = { male: 'Male', female: 'Female', unknown: 'Unknown' };
 
 // Every option carries a real, non-empty `value` (hard requirement for Select).
 const LANGUAGE_OPTIONS: SelectOption[] = [
   { value: 'es', label: 'Spanish' },
   { value: 'en', label: 'English' },
   { value: 'he', label: 'Hebrew' },
+];
+
+const GENDER_OPTIONS: SelectOption[] = [
+  { value: 'unknown', label: 'Unknown' },
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
 ];
 
 // ============================================================================
@@ -35,6 +42,7 @@ export interface WhitelistUpdate {
   id: string | number;
   label?: string;
   preferred_language?: PreferredLanguage;
+  gender?: Gender;
 }
 
 export interface WhitelistTableProps {
@@ -50,7 +58,7 @@ export interface WhitelistTableProps {
 const TH = 'bg-surface-2 border-b border-line-strong px-4 py-[11px] text-left text-[11.5px] font-bold uppercase tracking-[0.04em] text-fg-secondary';
 const TD = 'px-4 py-3 text-[13.5px] text-fg';
 
-type WhitelistSortKey = 'phone_number' | 'label' | 'preferred_language' | 'ezy_bp_name' | 'created_at';
+type WhitelistSortKey = 'phone_number' | 'label' | 'preferred_language' | 'gender' | 'ezy_bp_name' | 'created_at';
 
 function sortValue(row: WhitelistEntry, key: WhitelistSortKey): string {
   switch (key) {
@@ -60,6 +68,8 @@ function sortValue(row: WhitelistEntry, key: WhitelistSortKey): string {
       return row.label ?? '';
     case 'preferred_language':
       return LANGUAGE_LABEL[row.preferred_language];
+    case 'gender':
+      return GENDER_LABEL[row.gender];
     case 'ezy_bp_name':
       return row.ezy_bp_name ?? '';
     case 'created_at':
@@ -72,8 +82,9 @@ export function WhitelistTable({ rows = [], loading = false, deletingId, onDelet
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [draftLabel, setDraftLabel] = useState('');
   const [draftLang, setDraftLang] = useState<PreferredLanguage>('es');
+  const [draftGender, setDraftGender] = useState<Gender>('unknown');
   const [search, setSearch] = useState('');
-  const { sortKey, sortDir, toggleSort } = useSortState<WhitelistSortKey>();
+  const { sortKey, sortDir, toggleSort } = useSortState<WhitelistSortKey>('label');
 
   const filteredRows = useMemo(
     () =>
@@ -86,6 +97,7 @@ export function WhitelistTable({ rows = [], loading = false, deletingId, onDelet
           row.ezy_bp_name,
           row.ezy_contact_name,
           LANGUAGE_LABEL[row.preferred_language],
+          GENDER_LABEL[row.gender],
         ),
       ),
     [rows, search],
@@ -101,10 +113,11 @@ export function WhitelistTable({ rows = [], loading = false, deletingId, onDelet
     setEditingId(row.id);
     setDraftLabel(row.label ?? '');
     setDraftLang(row.preferred_language);
+    setDraftGender(row.gender);
   };
   const cancelEdit = () => setEditingId(null);
   const saveEdit = (row: WhitelistEntry) => {
-    onUpdate?.({ id: row.id, label: draftLabel.trim(), preferred_language: draftLang });
+    onUpdate?.({ id: row.id, label: draftLabel.trim(), preferred_language: draftLang, gender: draftGender });
     setEditingId(null);
   };
 
@@ -147,6 +160,7 @@ export function WhitelistTable({ rows = [], loading = false, deletingId, onDelet
               <SortableTh label="Number" sortKey="phone_number" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as WhitelistSortKey)} />
               <SortableTh label="Label" sortKey="label" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as WhitelistSortKey)} />
               <SortableTh label="Lang" sortKey="preferred_language" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as WhitelistSortKey)} />
+              <SortableTh label="Gender" sortKey="gender" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as WhitelistSortKey)} />
               <SortableTh label="EZY Portal" sortKey="ezy_bp_name" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as WhitelistSortKey)} />
               <SortableTh label="Added" sortKey="created_at" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as WhitelistSortKey)} />
               <th className={cn(TH, 'w-20')} aria-label="Actions" />
@@ -194,6 +208,18 @@ export function WhitelistTable({ rows = [], loading = false, deletingId, onDelet
                     />
                   ) : (
                     <Badge label={LANGUAGE_LABEL[row.preferred_language]} tone="neutral" />
+                  )}
+                </td>
+                <td className={TD}>
+                  {isEditing ? (
+                    <Select
+                      value={draftGender}
+                      options={GENDER_OPTIONS}
+                      onChange={(v) => setDraftGender(v as Gender)}
+                      aria-label="Gender"
+                    />
+                  ) : (
+                    <Badge label={GENDER_LABEL[row.gender]} tone="neutral" />
                   )}
                 </td>
                 <td className={TD}>

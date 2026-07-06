@@ -68,9 +68,9 @@ export function WhitelistPage() {
       <div className="flex flex-col gap-[22px] p-7">
         <AddNumberForm
           submitting={add.isPending}
-          onAdd={({ number, label }) =>
+          onAdd={({ number, label, gender }) =>
             add.mutate(
-              { number, label },
+              { number, label, gender },
               {
                 onSuccess: (entry) =>
                   toast({
@@ -108,9 +108,9 @@ export function WhitelistPage() {
             });
           }}
           onLink={(row) => setLinkingEntry(row)}
-          onUpdate={({ id, label, preferred_language }) =>
+          onUpdate={({ id, label, preferred_language, gender }) =>
             update.mutate(
-              { id, label, preferred_language },
+              { id, label, preferred_language, gender },
               {
                 onSuccess: () => toast({ tone: 'success', title: 'Contact updated' }),
                 onError: (e) =>

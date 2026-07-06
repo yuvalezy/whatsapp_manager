@@ -378,8 +378,9 @@ messagesRouter.post('/:number/draft-reply', async (req, res, next) => {
     const contextMessages = [...rawMessages].reverse();
 
     const targetLanguage = await whitelistService.getPreferredLanguage(number);
+    const recipientGender = await whitelistService.getGender(number);
 
-    const result = await draftReplyService.generate(contextMessages, draft, targetLanguage);
+    const result = await draftReplyService.generate(contextMessages, draft, targetLanguage, recipientGender);
 
     if (result.inputTokens != null && result.outputTokens != null) {
       await costService

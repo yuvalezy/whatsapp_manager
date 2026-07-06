@@ -6,10 +6,17 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { Select, type SelectOption } from '@/components/ui/Select';
 import { PhoneNumber } from './PhoneNumber';
 import { RelativeTime } from './RelativeTime';
 import { cn } from '@/lib/cn';
-import type { WhatsAppContact } from '@/types';
+import type { Gender, WhatsAppContact } from '@/types';
+
+const GENDER_OPTIONS: SelectOption[] = [
+  { value: 'unknown', label: 'Unknown' },
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
+];
 
 // ============================================================================
 // ContactPickerModal — browse real WhatsApp conversations (from the linked
@@ -24,7 +31,7 @@ export interface ContactPickerModalProps {
   error?: string | null;
   submitting?: boolean;
   onClose?: () => void;
-  onAdd?: (entries: { number: string; label: string }[]) => void;
+  onAdd?: (entries: { number: string; label: string; gender: Gender }[]) => void;
 }
 
 export function ContactPickerModal({
@@ -38,6 +45,7 @@ export function ContactPickerModal({
 }: ContactPickerModalProps) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [genders, setGenders] = useState<Record<string, Gender>>({});
 
   // Always start from a clean slate on open — covers every close path (Cancel,
   // backdrop, X, or the parent closing it directly after a successful add).
@@ -45,6 +53,7 @@ export function ContactPickerModal({
     if (open) {
       setSearch('');
       setSelected(new Set());
+      setGenders({});
     }
   }, [open]);
 
@@ -70,7 +79,7 @@ export function ContactPickerModal({
   const handleAdd = () => {
     const entries = contacts
       .filter((c) => selected.has(c.number))
-      .map((c) => ({ number: c.number, label: c.name }));
+      .map((c) => ({ number: c.number, label: c.name, gender: genders[c.number] ?? 'unknown' }));
     onAdd?.(entries);
   };
 
@@ -110,30 +119,46 @@ export function ContactPickerModal({
           <div className="py-6 text-center text-[13px] text-fg-muted">No contacts match "{search}".</div>
         ) : (
           <div className="flex max-h-[380px] flex-col gap-1 overflow-y-auto">
-            {filtered.map((c) => (
-              <button
+            {filtered.map((c) => {
+              const isSelected = selected.has(c.number);
+              return (
+              <div
                 key={c.number}
-                type="button"
-                disabled={c.whitelisted}
-                onClick={() => toggle(c.number)}
                 className={cn(
                   'flex w-full items-center gap-3 rounded-wm border border-transparent px-2.5 py-2 text-left transition-colors',
-                  c.whitelisted ? 'cursor-default opacity-50' : 'cursor-pointer hover:border-line-strong hover:bg-surface-2',
+                  c.whitelisted ? 'opacity-50' : 'hover:border-line-strong hover:bg-surface-2',
                 )}
               >
-                <Checkbox checked={c.whitelisted || selected.has(c.number)} disabled={c.whitelisted} />
-                <Avatar personName={c.name} size="sm" />
-                <div className="flex min-w-0 flex-1 flex-col items-start">
-                  <span className="truncate text-[13.5px] font-medium text-fg">{c.name}</span>
-                  <PhoneNumber value={c.number} fontSize="11.5px" />
-                </div>
+                <button
+                  type="button"
+                  disabled={c.whitelisted}
+                  onClick={() => toggle(c.number)}
+                  className={cn('flex min-w-0 flex-1 items-center gap-3', c.whitelisted ? 'cursor-default' : 'cursor-pointer')}
+                >
+                  <Checkbox checked={c.whitelisted || isSelected} disabled={c.whitelisted} />
+                  <Avatar personName={c.name} size="sm" />
+                  <div className="flex min-w-0 flex-1 flex-col items-start">
+                    <span className="truncate text-[13.5px] font-medium text-fg">{c.name}</span>
+                    <PhoneNumber value={c.number} fontSize="11.5px" />
+                  </div>
+                </button>
                 {c.whitelisted ? (
                   <Badge label="Whitelisted" tone="success" />
+                ) : isSelected ? (
+                  <div className="w-[120px] shrink-0">
+                    <Select
+                      value={genders[c.number] ?? 'unknown'}
+                      options={GENDER_OPTIONS}
+                      onChange={(v) => setGenders((prev) => ({ ...prev, [c.number]: v as Gender }))}
+                      aria-label={`Gender for ${c.name}`}
+                    />
+                  </div>
                 ) : (
                   c.lastActivity && <RelativeTime timestamp={c.lastActivity} fontSize="11px" />
                 )}
-              </button>
-            ))}
+              </div>
+              );
+            })}
           </div>
         )}
       </div>

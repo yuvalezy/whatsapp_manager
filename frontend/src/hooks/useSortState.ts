@@ -9,9 +9,9 @@ export type SortDir = 'asc' | 'desc';
 // caller's rows already came in.
 // ============================================================================
 
-export function useSortState<K extends string>() {
-  const [sortKey, setSortKey] = useState<K | null>(null);
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+export function useSortState<K extends string>(initialKey: K | null = null, initialDir: SortDir = 'asc') {
+  const [sortKey, setSortKey] = useState<K | null>(initialKey);
+  const [sortDir, setSortDir] = useState<SortDir>(initialDir);
 
   const toggleSort = (key: K) => {
     if (sortKey === key) {

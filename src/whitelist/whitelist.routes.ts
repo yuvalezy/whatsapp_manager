@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { whitelistService, ValidationError, PreferredLanguage } from './whitelist.service';
+import { whitelistService, ValidationError, PreferredLanguage, Gender } from './whitelist.service';
 
 const PREFERRED_LANGUAGES: readonly PreferredLanguage[] = ['es', 'en', 'he'];
+const GENDERS: readonly Gender[] = ['male', 'female', 'unknown'];
 
 export const whitelistRouter = Router();
 
@@ -14,17 +15,26 @@ whitelistRouter.get('/', async (_req, res, next) => {
   }
 });
 
-// POST /whitelist — { number, label? }
+// POST /whitelist — { number, label?, gender? }
 whitelistRouter.post('/', async (req, res, next) => {
   try {
-    const { number, label } = (req.body ?? {}) as { number?: unknown; label?: unknown };
+    const { number, label, gender } = (req.body ?? {}) as {
+      number?: unknown;
+      label?: unknown;
+      gender?: unknown;
+    };
     if (!number) {
       res.status(400).json({ error: 'Field "number" is required' });
+      return;
+    }
+    if (gender !== undefined && !GENDERS.includes(gender as Gender)) {
+      res.status(400).json({ error: '"gender" must be one of: male, female, unknown' });
       return;
     }
     const entry = await whitelistService.add(
       String(number),
       label != null ? String(label) : undefined,
+      gender as Gender | undefined,
     );
     res.status(201).json({ data: entry });
   } catch (err) {
@@ -73,8 +83,8 @@ whitelistRouter.put('/:id/ezy-link', async (req, res, next) => {
   }
 });
 
-// PUT /whitelist/:id — edit label and/or preferred_language.
-// { label?: string | null, preferred_language?: 'es' | 'en' | 'he' }
+// PUT /whitelist/:id — edit label, preferred_language, and/or gender.
+// { label?: string | null, preferred_language?: 'es' | 'en' | 'he', gender?: 'male' | 'female' | 'unknown' }
 whitelistRouter.put('/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -82,8 +92,8 @@ whitelistRouter.put('/:id', async (req, res, next) => {
       res.status(400).json({ error: 'Invalid whitelist id' });
       return;
     }
-    const body = (req.body ?? {}) as { label?: unknown; preferred_language?: unknown };
-    const updates: { label?: string | null; preferredLanguage?: PreferredLanguage } = {};
+    const body = (req.body ?? {}) as { label?: unknown; preferred_language?: unknown; gender?: unknown };
+    const updates: { label?: string | null; preferredLanguage?: PreferredLanguage; gender?: Gender } = {};
 
     if ('label' in body) {
       const { label } = body;
@@ -103,8 +113,17 @@ whitelistRouter.put('/:id', async (req, res, next) => {
       updates.preferredLanguage = lang as PreferredLanguage;
     }
 
-    if (updates.label === undefined && updates.preferredLanguage === undefined) {
-      res.status(400).json({ error: 'Provide at least one of "label" or "preferred_language"' });
+    if ('gender' in body) {
+      const { gender } = body;
+      if (!GENDERS.includes(gender as Gender)) {
+        res.status(400).json({ error: '"gender" must be one of: male, female, unknown' });
+        return;
+      }
+      updates.gender = gender as Gender;
+    }
+
+    if (updates.label === undefined && updates.preferredLanguage === undefined && updates.gender === undefined) {
+      res.status(400).json({ error: 'Provide at least one of "label", "preferred_language", or "gender"' });
       return;
     }
 

@@ -1,7 +1,7 @@
 import { env } from '../config/env';
 import { resolveDeepseekKey } from '../credentials/credentials.service';
 import type { StoredMessage } from '../messages/message.model';
-import { PreferredLanguage } from '../whitelist/whitelist.service';
+import { Gender, PreferredLanguage } from '../whitelist/whitelist.service';
 
 export interface DraftReplyResult {
   english: string;
@@ -15,6 +15,11 @@ const LANGUAGE_LABELS: Record<PreferredLanguage, string> = {
   en: 'English',
   es: 'Spanish',
   he: 'Hebrew',
+};
+
+const GENDER_LABELS: Record<Exclude<Gender, 'unknown'>, string> = {
+  male: 'male',
+  female: 'female',
 };
 
 function messagesToContext(msgs: StoredMessage[]): string {
@@ -36,6 +41,7 @@ class DraftReplyService {
     contextMessages: StoredMessage[],
     userDraft: string,
     targetLanguage: PreferredLanguage,
+    recipientGender?: Gender | null,
   ): Promise<DraftReplyResult> {
     const key = resolveDeepseekKey();
     if (!key) throw new Error('No DeepSeek API key configured');
@@ -47,9 +53,16 @@ class DraftReplyService {
       ? `Here is the recent conversation:\n\n${messagesToContext(contextMessages)}`
       : 'There are no recent messages in this conversation.';
 
+    // Gendered languages (e.g. Spanish, Hebrew) need adjective/verb agreement
+    // with the recipient's gender to read naturally — only mention it when known.
+    const genderNote =
+      recipientGender && recipientGender !== 'unknown'
+        ? ` The recipient is ${GENDER_LABELS[recipientGender]} — use grammatically correct gendered language (adjectives, verb agreement, titles) accordingly when addressing them.`
+        : '';
+
     const systemPrompt = needsTranslation
-      ? `You are a helpful WhatsApp reply drafting assistant. You write natural, friendly replies based on the user's notes and the conversation context. Keep replies concise and conversational — like a real WhatsApp message, not an email. Do NOT add greetings or sign-offs unless the user's notes indicate they want them.\n\nYou will generate a reply in TWO languages:\n1. "english" — the reply in English\n2. "translated" — the same reply in natural ${targetLabel} (NOT a literal translation — write it as a native ${targetLabel} speaker would, keeping the same meaning and tone)\n\nRespond with ONLY a JSON object: {"english": "...", "translated": "..."}`
-      : `You are a helpful WhatsApp reply drafting assistant. You write natural, friendly replies based on the user's notes and the conversation context. Keep replies concise and conversational — like a real WhatsApp message, not an email. Do NOT add greetings or sign-offs unless the user's notes indicate they want them.\n\nGenerate the reply in English.\n\nRespond with ONLY a JSON object: {"english": "..."}`;
+      ? `You are a helpful WhatsApp reply drafting assistant. You write natural, friendly replies based on the user's notes and the conversation context. Keep replies concise and conversational — like a real WhatsApp message, not an email. Do NOT add greetings or sign-offs unless the user's notes indicate they want them.${genderNote}\n\nYou will generate a reply in TWO languages:\n1. "english" — the reply in English\n2. "translated" — the same reply in natural ${targetLabel} (NOT a literal translation — write it as a native ${targetLabel} speaker would, keeping the same meaning and tone)\n\nRespond with ONLY a JSON object: {"english": "...", "translated": "..."}`
+      : `You are a helpful WhatsApp reply drafting assistant. You write natural, friendly replies based on the user's notes and the conversation context. Keep replies concise and conversational — like a real WhatsApp message, not an email. Do NOT add greetings or sign-offs unless the user's notes indicate they want them.${genderNote}\n\nGenerate the reply in English.\n\nRespond with ONLY a JSON object: {"english": "..."}`;
 
     const res = await fetch(`${env.DEEPSEEK_BASE_URL}/chat/completions`, {
       method: 'POST',

@@ -3,6 +3,7 @@ import { logger } from '../logger';
 import { normalizeNumber, isValidNumber } from '../utils/phone';
 
 export type PreferredLanguage = 'es' | 'en' | 'he';
+export type Gender = 'male' | 'female' | 'unknown';
 
 export interface WhitelistEntry {
   id: number;
@@ -16,6 +17,7 @@ export interface WhitelistEntry {
   ezy_contact_name: string | null;
   ezy_linked_at: string | null;
   preferred_language: PreferredLanguage;
+  gender: Gender;
 }
 
 export interface EzyLinkInput {
@@ -27,7 +29,7 @@ export interface EzyLinkInput {
 }
 
 const ENTRY_COLUMNS =
-  'id, phone_number, label, created_at, ezy_bp_id, ezy_bp_code, ezy_bp_name, ezy_contact_id, ezy_contact_name, ezy_linked_at, preferred_language';
+  'id, phone_number, label, created_at, ezy_bp_id, ezy_bp_code, ezy_bp_name, ezy_contact_id, ezy_contact_name, ezy_linked_at, preferred_language, gender';
 
 export class ValidationError extends Error {}
 
@@ -63,7 +65,7 @@ class WhitelistService {
     return rows;
   }
 
-  async add(rawNumber: string, label?: string): Promise<WhitelistEntry> {
+  async add(rawNumber: string, label?: string, gender?: Gender): Promise<WhitelistEntry> {
     const phone = normalizeNumber(rawNumber);
     if (!isValidNumber(phone)) {
       throw new ValidationError(
@@ -71,11 +73,11 @@ class WhitelistService {
       );
     }
     const { rows } = await query<WhitelistEntry>(
-      `INSERT INTO whitelist (phone_number, label)
-       VALUES ($1, $2)
-       ON CONFLICT (phone_number) DO UPDATE SET label = EXCLUDED.label
+      `INSERT INTO whitelist (phone_number, label, gender)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (phone_number) DO UPDATE SET label = EXCLUDED.label, gender = EXCLUDED.gender
        RETURNING ${ENTRY_COLUMNS}`,
-      [phone, label ?? null],
+      [phone, label ?? null, gender ?? 'unknown'],
     );
     this.cache.add(phone);
     logger.info({ phone }, 'Whitelist entry added');
@@ -90,7 +92,7 @@ class WhitelistService {
    */
   async updateEntry(
     id: number,
-    updates: { label?: string | null; preferredLanguage?: PreferredLanguage },
+    updates: { label?: string | null; preferredLanguage?: PreferredLanguage; gender?: Gender },
   ): Promise<WhitelistEntry | null> {
     const sets: string[] = [];
     const params: unknown[] = [id];
@@ -101,6 +103,10 @@ class WhitelistService {
     if (updates.preferredLanguage !== undefined) {
       params.push(updates.preferredLanguage);
       sets.push(`preferred_language = $${params.length}`);
+    }
+    if (updates.gender !== undefined) {
+      params.push(updates.gender);
+      sets.push(`gender = $${params.length}`);
     }
     if (sets.length === 0) {
       const { rows } = await query<WhitelistEntry>(
@@ -173,6 +179,21 @@ class WhitelistService {
       [phone],
     );
     return rows[0]?.preferred_language ?? 'es';
+  }
+
+  /**
+   * Return a contact's gender, if known. Returns null for contacts without a
+   * whitelist entry or with gender left as 'unknown' — callers should treat
+   * null as "don't mention gender".
+   */
+  async getGender(rawNumber: string): Promise<Gender | null> {
+    const phone = normalizeNumber(rawNumber);
+    const { rows } = await query<{ gender: Gender }>(
+      'SELECT gender FROM whitelist WHERE phone_number = $1',
+      [phone],
+    );
+    const gender = rows[0]?.gender;
+    return gender && gender !== 'unknown' ? gender : null;
   }
 
   async remove(rawNumber: string): Promise<boolean> {

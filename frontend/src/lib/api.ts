@@ -34,6 +34,7 @@ import type {
   OutboundAttachment,
   Paging,
   PreferredLanguage,
+  Gender,
   QrData,
   StatusData,
   StoredMessage,
@@ -125,19 +126,19 @@ export const api = {
   qr: () => request<QrData>('/qr?format=json'),
 
   listWhitelist: () => request<WhitelistEntry[]>('/whitelist'),
-  addWhitelist: (number: string, label?: string) =>
+  addWhitelist: (number: string, label?: string, gender?: Gender) =>
     request<WhitelistEntry>('/whitelist', {
       method: 'POST',
-      body: JSON.stringify({ number, label }),
+      body: JSON.stringify({ number, label, gender }),
     }),
   removeWhitelist: (number: string) =>
     request<{ removed: boolean }>(`/whitelist/${encodeURIComponent(number)}`, {
       method: 'DELETE',
     }),
-  // Edit an existing whitelist entry (label and/or preferred language) by id.
+  // Edit an existing whitelist entry (label, preferred language, and/or gender) by id.
   updateWhitelistEntry: (
     id: string | number,
-    patch: { label?: string; preferred_language?: PreferredLanguage },
+    patch: { label?: string; preferred_language?: PreferredLanguage; gender?: Gender },
   ) =>
     request<WhitelistEntry>(`/whitelist/${encodeURIComponent(String(id))}`, {
       method: 'PUT',

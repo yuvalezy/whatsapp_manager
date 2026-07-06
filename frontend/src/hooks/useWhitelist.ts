@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { PreferredLanguage, WhatsAppContact, WhitelistEntry } from '@/types';
+import type { Gender, PreferredLanguage, WhatsAppContact, WhitelistEntry } from '@/types';
 
 export function useWhitelist() {
   return useQuery<WhitelistEntry[]>({
@@ -12,8 +12,8 @@ export function useWhitelist() {
 export function useAddWhitelist() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ number, label }: { number: string; label?: string }) =>
-      api.addWhitelist(number, label),
+    mutationFn: ({ number, label, gender }: { number: string; label?: string; gender?: Gender }) =>
+      api.addWhitelist(number, label, gender),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['whitelist'] });
       void qc.invalidateQueries({ queryKey: ['status'] });
@@ -32,7 +32,7 @@ export function useRemoveWhitelist() {
   });
 }
 
-/** Edit a whitelist entry's label and/or preferred language (inline table edit). */
+/** Edit a whitelist entry's label, preferred language, and/or gender (inline table edit). */
 export function useUpdateWhitelist() {
   const qc = useQueryClient();
   return useMutation({
@@ -40,11 +40,13 @@ export function useUpdateWhitelist() {
       id,
       label,
       preferred_language,
+      gender,
     }: {
       id: string | number;
       label?: string;
       preferred_language?: PreferredLanguage;
-    }) => api.updateWhitelistEntry(id, { label, preferred_language }),
+      gender?: Gender;
+    }) => api.updateWhitelistEntry(id, { label, preferred_language, gender }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['whitelist'] });
       void qc.invalidateQueries({ queryKey: ['threads'] });
@@ -68,8 +70,10 @@ export function useWhatsAppContacts(enabled: boolean) {
 export function useAddWhitelistBulk() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (entries: { number: string; label?: string }[]) => {
-      const results = await Promise.allSettled(entries.map((e) => api.addWhitelist(e.number, e.label)));
+    mutationFn: async (entries: { number: string; label?: string; gender?: Gender }[]) => {
+      const results = await Promise.allSettled(
+        entries.map((e) => api.addWhitelist(e.number, e.label, e.gender)),
+      );
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
       return { succeeded, failed: results.length - succeeded, total: results.length };
     },

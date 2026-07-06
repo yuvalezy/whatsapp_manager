@@ -62,6 +62,7 @@ export interface AuthMe {
 }
 
 export type PreferredLanguage = 'es' | 'en' | 'he';
+export type Gender = 'male' | 'female' | 'unknown';
 
 export interface WhitelistEntry {
   id: string | number;
@@ -75,6 +76,7 @@ export interface WhitelistEntry {
   ezy_contact_name?: string | null;
   ezy_linked_at?: string | null;
   preferred_language: PreferredLanguage;
+  gender: Gender;
 }
 
 export interface EzyBusinessPartner {

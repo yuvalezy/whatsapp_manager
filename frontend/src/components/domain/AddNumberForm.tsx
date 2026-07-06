@@ -2,6 +2,14 @@ import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { Select, type SelectOption } from '@/components/ui/Select';
+import type { Gender } from '@/types';
+
+const GENDER_OPTIONS: SelectOption[] = [
+  { value: 'unknown', label: 'Unknown' },
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
+];
 
 // ============================================================================
 // AddNumberForm — number + optional label + submit, with lightweight inline
@@ -18,22 +26,24 @@ function validate(v: string): string {
 
 export interface AddNumberFormProps {
   submitting?: boolean;
-  onAdd?: (payload: { number: string; label?: string }) => void;
+  onAdd?: (payload: { number: string; label?: string; gender?: Gender }) => void;
   className?: string;
 }
 
 export function AddNumberForm({ submitting = false, onAdd, className }: AddNumberFormProps) {
   const [number, setNumber] = useState('');
   const [label, setLabel] = useState('');
+  const [gender, setGender] = useState<Gender>('unknown');
   const [touched, setTouched] = useState(false);
   const error = touched ? validate(number) : '';
 
   const handleSubmit = () => {
     setTouched(true);
     if (validate(number)) return;
-    onAdd?.({ number, label: label || undefined });
+    onAdd?.({ number, label: label || undefined, gender });
     setNumber('');
     setLabel('');
+    setGender('unknown');
     setTouched(false);
   };
 
@@ -60,6 +70,14 @@ export function AddNumberForm({ submitting = false, onAdd, className }: AddNumbe
             value={label}
             onChange={setLabel}
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+          />
+        </div>
+        <div className="w-[150px]">
+          <Select
+            label="Gender"
+            value={gender}
+            options={GENDER_OPTIONS}
+            onChange={(v) => setGender(v as Gender)}
           />
         </div>
         <div className="pt-[22px]">
