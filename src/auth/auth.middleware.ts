@@ -4,9 +4,10 @@ import { env } from '../config/env';
 import { isAuthConfigured, verify } from './jwt';
 
 /**
- * The single app-wide guard. Two credentials, two capability levels:
- *   • personal JWT  (Authorization: Bearer <jwt>  /  ?access_token=)  → full access
- *   • external key  (x-api-key: <key>             /  ?api_key=)       → read-only (GET)
+ * The single app-wide guard. Three credentials, three capability levels:
+ *   • personal JWT   (Authorization: Bearer <jwt>  /  ?access_token=)  → full access
+ *   • external key   (x-api-key: <key>             /  ?api_key=)       → read-only (GET)
+ *   • outbound key   (x-api-key: <OUTBOUND_API_KEY>)                   → POST /outbound/send ONLY
  *
  * The query-param variants exist because element/navigation/SSE requests
  * (<img>, <audio>, <a download>, EventSource) can't set headers.
@@ -75,8 +76,26 @@ export function authGuard(req: Request, res: Response, next: NextFunction): void
     }
   }
 
-  // 2) External API key. Read-only when a personal login backstops full access.
   const key = apiKey(req);
+
+  // 2) Scoped OUTBOUND key → write access to POST /outbound/send ONLY. Checked
+  //    before the general key so the read-only wall never blocks the orchestrator's
+  //    outbound drainer. Cheap method/path checks gate the constant-time compare.
+  const outboundKey = env.OUTBOUND_API_KEY;
+  if (
+    key &&
+    outboundKey &&
+    outboundKey.trim() !== '' &&
+    req.method === 'POST' &&
+    req.path === '/outbound/send' &&
+    timingSafeEqualStr(key, outboundKey)
+  ) {
+    req.auth = { kind: 'apikey' };
+    next();
+    return;
+  }
+
+  // 3) External API key. Read-only when a personal login backstops full access.
   if (key && hasApiKey && timingSafeEqualStr(key, env.API_KEY as string)) {
     if (isAuthConfigured() && !isReadMethod(req.method)) {
       res.status(403).json({ error: 'API key is read-only' });

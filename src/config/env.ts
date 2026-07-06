@@ -63,6 +63,13 @@ const envSchema = z.object({
   // the sole credential and grants full access (backward-compatible).
   API_KEY: z.string().optional(),
 
+  // Scoped OUTBOUND key — write access to `POST /outbound/send` ONLY. A dedicated
+  // credential for the agent orchestrator's outbound drainer: it can SEND but
+  // cannot read or reach any other route. Independent of API_KEY (which stays
+  // read-only) and the personal JWT (which stays full-access). Unset ⇒ no scoped
+  // write access (an external key then hits the read-only wall → 403).
+  OUTBOUND_API_KEY: z.string().optional(),
+
   // ── Outbound webhook (MessageRouter fan-out) ─────────────────
   // When WEBHOOK_URL is set, every routable (whitelisted contact / monitored
   // group) message is POSTed as JSON to it, signed with
