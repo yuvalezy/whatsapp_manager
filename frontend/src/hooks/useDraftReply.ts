@@ -17,9 +17,15 @@ export function useSendMessage() {
   const qc = useQueryClient();
   // `number` is the thread id (contact number or group id); `isGroup` picks the
   // group send path. Invalidation keys on the same id either way.
-  return useMutation<{ messageId: string }, Error, { number: string; message: string; isGroup?: boolean }>({
-    mutationFn: ({ number, message, isGroup }) =>
-      isGroup ? api.sendGroupMessage(number, message) : api.sendMessage(number, message),
+  return useMutation<
+    { messageId: string },
+    Error,
+    { number: string; message: string; isGroup?: boolean; quotedMessageId?: string }
+  >({
+    mutationFn: ({ number, message, isGroup, quotedMessageId }) =>
+      isGroup
+        ? api.sendGroupMessage(number, message, quotedMessageId)
+        : api.sendMessage(number, message, quotedMessageId),
     onSuccess: (_data, variables) => {
       const normalized = normalizeNumber(variables.number);
       void qc.invalidateQueries({ queryKey: ['messages', 'by-number', normalized] });

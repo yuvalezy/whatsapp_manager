@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
 import { useToast } from '@/components/ui/Toast';
+import { MessageTypeBadge } from './MessageTypeBadge';
 import { cn } from '@/lib/cn';
-import type { ComposeState, DraftReplyResult } from '@/types';
+import type { ComposeState, DraftReplyResult, StoredMessage } from '@/types';
 import { useDraftReply, useSendMessage } from '@/hooks/useDraftReply';
 
 export interface ComposeReplyProps {
@@ -16,6 +18,10 @@ export interface ComposeReplyProps {
   onComposeStateChange: (state: ComposeState) => void;
   /** Called the instant a send is kicked off, so the thread view can snap to the bottom. */
   onSend?: () => void;
+  /** The message being quoted, if the user picked "Reply" on a bubble. */
+  replyTarget: StoredMessage | null;
+  /** Clears the active quote target (its own "x" button, or a full compose reset). */
+  onClearReply: () => void;
 }
 
 const LANGUAGE_LABELS: Record<string, string> = { es: 'Spanish', en: 'English', he: 'Hebrew' };
@@ -28,6 +34,8 @@ export function ComposeReply({
   composeState,
   onComposeStateChange,
   onSend,
+  replyTarget,
+  onClearReply,
 }: ComposeReplyProps) {
   const [draft, setDraft] = useState('');
   const [englishDraft, setEnglishDraft] = useState('');
@@ -53,12 +61,18 @@ export function ComposeReply({
     }
   }, [draft, englishDraft]);
 
+  // Picking "Reply" on a bubble should land the cursor ready to type.
+  useEffect(() => {
+    if (replyTarget) textareaRef.current?.focus();
+  }, [replyTarget]);
+
   const resetState = () => {
     setDraft('');
     setEnglishDraft('');
     setTranslatedDraft('');
     setSendingWhich(null);
     onComposeStateChange('idle');
+    onClearReply();
   };
 
   const doSend = (text: string, which: 'english' | 'translated') => {
@@ -68,7 +82,7 @@ export function ComposeReply({
     onComposeStateChange('sending');
     onSend?.();
     sendMessage.mutate(
-      { number: contactNumber, message: messageToSend, isGroup },
+      { number: contactNumber, message: messageToSend, isGroup, quotedMessageId: replyTarget?.message_id },
       {
         onSuccess: () => {
           toast({ tone: 'success', title: 'Message sent' });
@@ -165,6 +179,24 @@ export function ComposeReply({
 
   return (
     <div className="shrink-0 border-t border-line-strong bg-surface">
+      {replyTarget && (
+        <div className="flex items-center gap-2 border-b border-line-strong px-4 py-2">
+          <Icon name="reply" size={14} className="shrink-0 text-fg-muted" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="text-[11px] font-semibold text-primary">
+              Replying to {replyTarget.direction === 'outbound' ? 'yourself' : replyTarget.sender_name || 'them'}
+            </span>
+            {replyTarget.body?.trim() || replyTarget.transcript?.trim() ? (
+              <span className="truncate text-[12.5px] text-fg-secondary">
+                {replyTarget.body?.trim() || replyTarget.transcript?.trim()}
+              </span>
+            ) : (
+              <MessageTypeBadge messageType={replyTarget.message_type} />
+            )}
+          </div>
+          <IconButton icon="x" size="sm" variant="ghost" ariaLabel="Cancel reply" onClick={onClearReply} />
+        </div>
+      )}
       {showEditors && (
         <div className="flex flex-col gap-3 px-4 pt-3">
           {needsTranslation && (

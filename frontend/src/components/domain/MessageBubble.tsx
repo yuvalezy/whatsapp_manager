@@ -27,6 +27,10 @@ export interface MessageBubbleProps {
   findTerm?: string;
   /** This bubble is the currently-focused find match (ring + scroll-into-view). */
   activeMatch?: boolean;
+  /** Sets this message as the compose bar's active quote target. */
+  onReply: (message: StoredMessage) => void;
+  /** The message this one quotes, when it's loaded within the current thread window. */
+  quotedMessage?: StoredMessage;
 }
 
 export function MessageBubble({
@@ -35,6 +39,8 @@ export function MessageBubble({
   showSender = false,
   findTerm,
   activeMatch = false,
+  onReply,
+  quotedMessage,
 }: MessageBubbleProps) {
   const isOutbound = msg.direction === 'outbound';
   const hasMediaFile = msg.media_status === 'downloaded';
@@ -63,7 +69,7 @@ export function MessageBubble({
         highlighted && 'border-l-[3px] border-primary pl-2',
       )}
     >
-      {isOutbound && <MessageBubbleActions message={msg} align="end" />}
+      {isOutbound && <MessageBubbleActions message={msg} align="end" onReply={onReply} />}
       <div
         className={cn(
           'flex max-w-[min(70%,480px)] flex-col gap-1.5 px-3.5 py-2.5 text-fg',
@@ -76,6 +82,7 @@ export function MessageBubble({
         {showSender && !isOutbound && msg.sender_name && (
           <span className="text-[11.5px] font-semibold text-primary">{msg.sender_name}</span>
         )}
+        {quotedMessage && <QuotedSnippet message={quotedMessage} />}
         {hasMediaFile && <BubbleMedia message={msg} />}
         {hasBody && (
           <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed">
@@ -105,7 +112,24 @@ export function MessageBubble({
           {isOutbound && <AckIndicator ack={msg.ack} />}
         </div>
       </div>
-      {!isOutbound && <MessageBubbleActions message={msg} align="start" />}
+      {!isOutbound && <MessageBubbleActions message={msg} align="start" onReply={onReply} />}
+    </div>
+  );
+}
+
+/** The quoted-message strip shown above a bubble's own content when it's a reply. */
+function QuotedSnippet({ message }: { message: StoredMessage }) {
+  const text = message.body?.trim() || message.transcript?.trim() || '';
+  return (
+    <div className="flex flex-col gap-0.5 rounded-[6px] border-l-2 border-primary bg-surface px-2 py-1 text-[12px] text-fg-secondary">
+      {message.sender_name && (
+        <span className="text-[11px] font-semibold text-primary">{message.sender_name}</span>
+      )}
+      {text ? (
+        <span className="line-clamp-2">{text}</span>
+      ) : (
+        <MessageTypeBadge messageType={message.message_type} />
+      )}
     </div>
   );
 }

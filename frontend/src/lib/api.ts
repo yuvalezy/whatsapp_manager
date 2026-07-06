@@ -331,15 +331,16 @@ export const api = {
     }),
 
   // Outbound send (gated by ENABLE_OUTBOUND, rate-limited). Contact must be
-  // whitelisted; group must be monitored.
-  sendMessage: (number: string, message: string) =>
+  // whitelisted; group must be monitored. `quotedMessageId` (a message_id from
+  // the same thread) sends the message as a WhatsApp quoted reply.
+  sendMessage: (number: string, message: string, quotedMessageId?: string) =>
     request<{ messageId: string }>('/outbound/send', {
       method: 'POST',
-      body: JSON.stringify({ number, message }),
+      body: JSON.stringify({ number, message, quotedMessageId }),
     }),
-  sendGroupMessage: (groupId: string, message: string) =>
+  sendGroupMessage: (groupId: string, message: string, quotedMessageId?: string) =>
     request<{ messageId: string }>('/outbound/send', {
       method: 'POST',
-      body: JSON.stringify({ groupId, message }),
+      body: JSON.stringify({ groupId, message, quotedMessageId }),
     }),
 };

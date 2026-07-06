@@ -42,13 +42,16 @@ outboundRouter.use((_req, res, next) => {
 });
 
 // POST /outbound/send — { number, message } for a whitelisted contact, OR
-// { groupId, message } for a monitored group. Exactly one target.
+// { groupId, message } for a monitored group. Exactly one target. An optional
+// `quotedMessageId` (a stored message_id from the same thread) sends the reply
+// as a WhatsApp quote of that message.
 outboundRouter.post('/send', limiter, async (req, res, next) => {
   try {
-    const { number, message, groupId } = (req.body ?? {}) as {
+    const { number, message, groupId, quotedMessageId } = (req.body ?? {}) as {
       number?: unknown;
       message?: unknown;
       groupId?: unknown;
+      quotedMessageId?: unknown;
     };
     if (!message || (!number && !groupId)) {
       res.status(400).json({ error: '"message" and one of "number" / "groupId" are required' });
@@ -74,18 +77,36 @@ outboundRouter.post('/send', limiter, async (req, res, next) => {
       chatId = toChatId(threadKey);
     }
 
+    // A quote target must already belong to this same thread — refuse anything
+    // we can't find or that was captured on a different contact/group.
+    let quoteId: string | undefined;
+    if (quotedMessageId) {
+      quoteId = String(quotedMessageId);
+      const quoted = await messageService.getByMessageId(quoteId);
+      if (!quoted || quoted.contact_number !== threadKey) {
+        res.status(400).json({ error: 'quotedMessageId does not belong to this thread' });
+        return;
+      }
+    }
+
     const client = whatsappService.getClient();
     if (!client || whatsappService.getState() !== 'READY') {
       res.status(503).json({ error: 'WhatsApp client is not ready' });
       return;
     }
 
-    const sent = await client.sendMessage(chatId, String(message));
+    const sent = await client.sendMessage(
+      chatId,
+      String(message),
+      quoteId ? { quotedMessageId: quoteId } : undefined,
+    );
     logger.warn({ to: threadKey, messageId: sent.id._serialized }, 'OUTBOUND message sent');
 
     // Pin the thread key: `sent.to` can come back LID-addressed even when we
     // sent to the @c.us/@g.us chat id, and the target is already known.
     const routable = await buildRoutable(sent, whatsappService.getOwnNumber(), threadKey);
+    // Safety net: don't rely on the SDK's local echo re-deriving the quote.
+    if (quoteId) routable.replyToMessageId = quoteId;
     await messageService.save(routable).catch((err) =>
       logger.error({ err, messageId: sent.id._serialized }, 'Failed to persist own outbound message'),
     );

@@ -191,6 +191,9 @@ export interface StoredMessage {
 
   /** WhatsApp delivery ack (outbound): -1 error, 1 sent, 2 delivered, 3 read, 4 played. */
   ack?: number | null;
+
+  /** message_id this message quotes/replies to, if any. */
+  reply_to_message_id?: string | null;
 }
 
 export interface CredentialSummary {

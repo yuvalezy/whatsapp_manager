@@ -23,9 +23,15 @@ export interface MessageBubbleActionsProps {
   message: StoredMessage;
   /** Which corner the menu anchors to — mirrors the bubble's alignment. */
   align?: 'start' | 'end';
+  /** Sets this message as the compose bar's active quote target. */
+  onReply: (message: StoredMessage) => void;
 }
 
-export function MessageBubbleActions({ message: msg, align = 'start' }: MessageBubbleActionsProps) {
+export function MessageBubbleActions({
+  message: msg,
+  align = 'start',
+  onReply: onReplyProp,
+}: MessageBubbleActionsProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [openUpward, setOpenUpward] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -40,7 +46,7 @@ export function MessageBubbleActions({ message: msg, align = 'start' }: MessageB
   const hasMedia = msg.media_status === 'downloaded';
   const mediaKind = msg.media_type ?? msg.message_type;
   const isImage = hasMedia && (mediaKind === 'image' || mediaKind === 'sticker');
-  const menuItemCount = 3 + (isImage ? 1 : 0) + (hasMedia ? 1 : 0);
+  const menuItemCount = 4 + (isImage ? 1 : 0) + (hasMedia ? 1 : 0);
 
   // Close the menu on outside click or Escape.
   useEffect(() => {
@@ -128,6 +134,11 @@ export function MessageBubbleActions({ message: msg, align = 'start' }: MessageB
     setDetailOpen(true);
   };
 
+  const onReply = () => {
+    setMenuOpen(false);
+    onReplyProp(msg);
+  };
+
   // Flip the menu upward when it wouldn't fit below the button (e.g. the last
   // message in a thread, right above the fixed compose bar) so it never opens
   // hidden behind that bar.
@@ -168,6 +179,7 @@ export function MessageBubbleActions({ message: msg, align = 'start' }: MessageB
             openUpward ? 'bottom-full mb-1' : 'top-full mt-1',
           )}
         >
+          <MenuItem icon="reply" label="Reply" onClick={onReply} />
           <MenuItem icon="copy" label="Copy text" disabled={!canCopy} onClick={onCopy} />
           {isImage && <MenuItem icon="image" label="Copy image" onClick={onCopyImage} />}
           {hasMedia && <MenuItem icon="download" label="Download" onClick={onDownload} />}

@@ -95,6 +95,7 @@ export function ConversationsPage() {
 
   const [composeState, setComposeState] = useState<ComposeState>('idle');
   const [messageCount, setMessageCount] = useState(1);
+  const [replyTarget, setReplyTarget] = useState<StoredMessage | null>(null);
   const [search, setSearch] = useState('');
 
   // In-thread find state.
@@ -150,6 +151,14 @@ export function ConversationsPage() {
       ),
     [older, messages],
   );
+
+  // Resolves a bubble's `reply_to_message_id` to the quoted message, when it's
+  // within the currently loaded window — no extra fetch for the common case.
+  const quotedById = useMemo(() => {
+    const map = new Map<string, StoredMessage>();
+    for (const m of ordered) map.set(m.message_id, m);
+    return map;
+  }, [ordered]);
 
   // "Load older" is offered only while the newest page is full (there may be
   // more) or we've already pulled at least one older page and aren't exhausted.
@@ -294,6 +303,11 @@ export function ConversationsPage() {
     setComposeState('idle');
   };
 
+  const handleReply = (message: StoredMessage) => {
+    setReplyTarget(message);
+    if (composeState === 'idle') setComposeState('composing');
+  };
+
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el || suppressScrollRef.current) return;
@@ -320,6 +334,7 @@ export function ConversationsPage() {
     setFindActiveIndex(0);
     setComposeState('idle');
     setMessageCount(1);
+    setReplyTarget(null);
   }, [selected]);
 
   // Jump to the bottom whenever the tail of the thread changes while pinned
@@ -584,6 +599,8 @@ export function ConversationsPage() {
                             showSender={isGroup}
                             findTerm={findActive ? findQuery.trim() : undefined}
                             activeMatch={activeMatchId != null && m.id === activeMatchId}
+                            onReply={handleReply}
+                            quotedMessage={m.reply_to_message_id ? quotedById.get(m.reply_to_message_id) : undefined}
                           />
                         </Fragment>
                       );
@@ -611,6 +628,8 @@ export function ConversationsPage() {
                   onSend={() => {
                     atBottomRef.current = true;
                   }}
+                  replyTarget={replyTarget}
+                  onClearReply={() => setReplyTarget(null)}
                 />
               ) : (
                 <div className="shrink-0 border-t border-line-strong bg-surface px-5 py-3 text-center text-[12px] text-fg-muted">

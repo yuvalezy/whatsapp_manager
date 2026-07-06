@@ -430,6 +430,14 @@ class MessageService {
     return rows[0] ?? null;
   }
 
+  async getByMessageId(messageId: string): Promise<StoredMessage | null> {
+    const { rows } = await query<StoredMessage>(
+      `SELECT ${SELECT_COLS} FROM messages WHERE message_id = $1`,
+      [messageId],
+    );
+    return rows[0] ?? null;
+  }
+
   /** Epoch ms of the most recent stored message for a contact, or null if none captured yet. */
   async getLastMessageTimestamp(rawNumber: string): Promise<number | null> {
     const number = normalizeNumber(rawNumber);
