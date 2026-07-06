@@ -78,16 +78,20 @@ export function authGuard(req: Request, res: Response, next: NextFunction): void
 
   const key = apiKey(req);
 
-  // 2) Scoped OUTBOUND key → write access to POST /outbound/send ONLY. Checked
-  //    before the general key so the read-only wall never blocks the orchestrator's
-  //    outbound drainer. Cheap method/path checks gate the constant-time compare.
+  // 2) Scoped OUTBOUND key → write access to a small allowlist of orchestrator-
+  //    initiated writes ONLY: POST /outbound/send and POST /messages/:id/summarize
+  //    (the agent's muted-group @-mention summary). Checked before the general key
+  //    so the read-only wall never blocks the orchestrator. Cheap method/path
+  //    checks gate the constant-time compare.
   const outboundKey = env.OUTBOUND_API_KEY;
+  const scopedWriteAllowed =
+    req.method === 'POST' &&
+    (req.path === '/outbound/send' || /^\/messages\/\d+\/summarize$/.test(req.path));
   if (
     key &&
     outboundKey &&
     outboundKey.trim() !== '' &&
-    req.method === 'POST' &&
-    req.path === '/outbound/send' &&
+    scopedWriteAllowed &&
     timingSafeEqualStr(key, outboundKey)
   ) {
     req.auth = { kind: 'apikey' };
