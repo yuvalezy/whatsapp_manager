@@ -27,6 +27,7 @@ export interface MessageBubbleActionsProps {
 
 export function MessageBubbleActions({ message: msg, align = 'start' }: MessageBubbleActionsProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -39,6 +40,7 @@ export function MessageBubbleActions({ message: msg, align = 'start' }: MessageB
   const hasMedia = msg.media_status === 'downloaded';
   const mediaKind = msg.media_type ?? msg.message_type;
   const isImage = hasMedia && (mediaKind === 'image' || mediaKind === 'sticker');
+  const menuItemCount = 3 + (isImage ? 1 : 0) + (hasMedia ? 1 : 0);
 
   // Close the menu on outside click or Escape.
   useEffect(() => {
@@ -126,6 +128,21 @@ export function MessageBubbleActions({ message: msg, align = 'start' }: MessageB
     setDetailOpen(true);
   };
 
+  // Flip the menu upward when it wouldn't fit below the button (e.g. the last
+  // message in a thread, right above the fixed compose bar) so it never opens
+  // hidden behind that bar.
+  const toggleMenu = () => {
+    setMenuOpen((wasOpen) => {
+      const next = !wasOpen;
+      if (next) {
+        const rect = containerRef.current?.getBoundingClientRect();
+        const estimatedHeight = menuItemCount * 38 + 8;
+        setOpenUpward(!!rect && window.innerHeight - rect.bottom < estimatedHeight);
+      }
+      return next;
+    });
+  };
+
   return (
     <div ref={containerRef} className="relative">
       <IconButton
@@ -136,7 +153,7 @@ export function MessageBubbleActions({ message: msg, align = 'start' }: MessageB
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         loading={translate.isPending}
-        onClick={() => setMenuOpen((o) => !o)}
+        onClick={toggleMenu}
         className={cn(
           'opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100',
           menuOpen && 'opacity-100',
@@ -146,8 +163,9 @@ export function MessageBubbleActions({ message: msg, align = 'start' }: MessageB
         <div
           role="menu"
           className={cn(
-            'absolute top-full z-20 mt-1 flex min-w-[168px] flex-col gap-0.5 rounded-wm border border-line-strong bg-surface p-1 shadow-wm-pop animate-wm-scale-in',
+            'absolute z-20 flex min-w-[168px] flex-col gap-0.5 rounded-wm border border-line-strong bg-surface p-1 shadow-wm-pop animate-wm-scale-in',
             align === 'end' ? 'right-0' : 'left-0',
+            openUpward ? 'bottom-full mb-1' : 'top-full mt-1',
           )}
         >
           <MenuItem icon="copy" label="Copy text" disabled={!canCopy} onClick={onCopy} />
