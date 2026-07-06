@@ -4,6 +4,7 @@ import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { useToast } from '@/components/ui/Toast';
 import { MessageTypeBadge } from './MessageTypeBadge';
+import { MessageBodyText } from './MessageBubble';
 import { MentionAutocomplete } from './MentionAutocomplete';
 import { cn } from '@/lib/cn';
 import { fileToBase64 } from '@/lib/file';
@@ -70,6 +71,8 @@ export interface ComposeReplyProps {
   replyTarget: StoredMessage | null;
   /** Clears the active quote target (its own "x" button, or a full compose reset). */
   onClearReply: () => void;
+  /** phone_number → display name, for resolving @mentions in the quoted-reply preview. */
+  whitelistNames?: Map<string, string>;
 }
 
 const LANGUAGE_LABELS: Record<string, string> = { es: 'Spanish', en: 'English', he: 'Hebrew' };
@@ -84,6 +87,7 @@ export function ComposeReply({
   onSend,
   replyTarget,
   onClearReply,
+  whitelistNames,
 }: ComposeReplyProps) {
   const [draft, setDraft] = useState('');
   const [englishDraft, setEnglishDraft] = useState('');
@@ -195,6 +199,9 @@ export function ComposeReply({
     clearAttachment();
     onComposeStateChange('idle');
     onClearReply();
+    // The textarea is disabled while sending — re-enabling happens on this same
+    // render, so wait a frame before stealing focus back for the next message.
+    requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
   // Replace the active `@query` token with the picked person's `@Name` and
@@ -377,10 +384,16 @@ export function ComposeReply({
             <span className="text-[11px] font-semibold text-primary">
               Replying to {replyTarget.direction === 'outbound' ? 'yourself' : replyTarget.sender_name || 'them'}
             </span>
-            {replyTarget.body?.trim() || replyTarget.transcript?.trim() ? (
+            {replyTarget.body?.trim() ? (
               <span className="truncate text-[12.5px] text-fg-secondary">
-                {replyTarget.body?.trim() || replyTarget.transcript?.trim()}
+                <MessageBodyText
+                  body={replyTarget.body.trim()}
+                  mentions={replyTarget.mentions}
+                  whitelistNames={whitelistNames}
+                />
               </span>
+            ) : replyTarget.transcript?.trim() ? (
+              <span className="truncate text-[12.5px] text-fg-secondary">{replyTarget.transcript.trim()}</span>
             ) : (
               <MessageTypeBadge messageType={replyTarget.message_type} />
             )}

@@ -701,6 +701,7 @@ export function ConversationsPage() {
                   }}
                   replyTarget={replyTarget}
                   onClearReply={() => setReplyTarget(null)}
+                  whitelistNames={whitelistNames}
                 />
               ) : (
                 <div className="shrink-0 border-t border-line-strong bg-surface px-5 py-3 text-center text-[12px] text-fg-muted">

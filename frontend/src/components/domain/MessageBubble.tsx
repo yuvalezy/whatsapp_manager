@@ -99,6 +99,7 @@ export function MessageBubble({
         {quotedMessage && (
           <QuotedSnippet
             message={quotedMessage}
+            whitelistNames={whitelistNames}
             onJump={onQuoteJump ? () => onQuoteJump(quotedMessage.message_id) : undefined}
           />
         )}
@@ -167,7 +168,7 @@ function mentionDisplayText(mention: MessageMention, whitelistNames?: Map<string
  * common case stays exactly as before. Plain-text segments around/between
  * mentions still run through HighlightText so in-thread find still works.
  */
-function MessageBodyText({
+export function MessageBodyText({
   body,
   mentions,
   whitelistNames,
@@ -230,15 +231,30 @@ function isUsableNumber(number: string): boolean {
  * The quoted-message strip shown above a bubble's own content when it's a reply.
  * When `onJump` is given it becomes a button that scrolls to the original message.
  */
-function QuotedSnippet({ message, onJump }: { message: StoredMessage; onJump?: () => void }) {
-  const text = message.body?.trim() || message.transcript?.trim() || '';
+function QuotedSnippet({
+  message,
+  whitelistNames,
+  onJump,
+}: {
+  message: StoredMessage;
+  whitelistNames?: Map<string, string>;
+  onJump?: () => void;
+}) {
+  const bodyText = message.body?.trim();
+  const text = bodyText || message.transcript?.trim() || '';
   const inner = (
     <>
       {message.sender_name && (
         <span className="text-[11px] font-semibold text-primary">{message.sender_name}</span>
       )}
       {text ? (
-        <span className="line-clamp-2">{text}</span>
+        <span className="line-clamp-2">
+          {bodyText ? (
+            <MessageBodyText body={bodyText} mentions={message.mentions} whitelistNames={whitelistNames} />
+          ) : (
+            text
+          )}
+        </span>
       ) : (
         <MessageTypeBadge messageType={message.message_type} />
       )}
