@@ -122,6 +122,34 @@ export function dayDividerLabel(input: string | number | Date | null | undefined
   });
 }
 
+/** mimetype → file extension, for naming downloaded attachments. */
+const MIME_EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'video/mp4': 'mp4',
+  'video/3gpp': '3gp',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
+  'audio/ogg': 'ogg',
+  'audio/opus': 'opus',
+  'audio/mpeg': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/aac': 'aac',
+  'audio/wav': 'wav',
+  'audio/webm': 'webm',
+  'application/pdf': 'pdf',
+};
+
+/** Best-effort file extension for a media mimetype (used for download filenames). */
+export function extensionForMimetype(mimetype: string | null | undefined): string {
+  const base = (mimetype ?? '').split(';')[0].trim().toLowerCase();
+  if (MIME_EXTENSIONS[base]) return MIME_EXTENSIONS[base];
+  const sub = base.split('/')[1];
+  return sub && /^[a-z0-9]{1,5}$/.test(sub) ? sub : 'bin';
+}
+
 /** Deterministic hue (0–359) derived from a string — used for avatar tints. */
 export function hueFromString(str: string): number {
   let hash = 0;

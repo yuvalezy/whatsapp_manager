@@ -5,14 +5,18 @@ import { useToast } from '@/components/ui/Toast';
 import { useTranslateMessage } from '@/hooks/useTranslate';
 import { MessageDetail } from './MessageDetail';
 import { cn } from '@/lib/cn';
+import { api } from '@/lib/api';
+import { extensionForMimetype } from '@/lib/format';
 import type { StoredMessage } from '@/types';
 
 // ============================================================================
 // MessageBubbleActions — the hover/keyboard action menu for one chat bubble:
-// copy text, translate to English (reuses the single-message translate
-// mutation), and open full details (reuses the MessageDetail drawer). Self-
-// contained: owns the menu, the detail drawer, and the translate call so
-// MessageBubble stays presentational.
+// copy text, copy image (images only, re-encoded to PNG for clipboard
+// compatibility), download attachment (any downloaded media), translate to
+// English (reuses the single-message translate mutation), and open full
+// details (reuses the MessageDetail drawer). Self-contained: owns the menu,
+// the detail drawer, and the translate call so MessageBubble stays
+// presentational.
 // ============================================================================
 
 export interface MessageBubbleActionsProps {
@@ -31,6 +35,10 @@ export function MessageBubbleActions({ message: msg, align = 'start' }: MessageB
   const copyText = msg.body?.trim() || msg.transcript?.trim() || '';
   const canCopy = copyText.length > 0;
   const canTranslate = !!(msg.body?.trim() || msg.transcript?.trim());
+
+  const hasMedia = msg.media_status === 'downloaded';
+  const mediaKind = msg.media_type ?? msg.message_type;
+  const isImage = hasMedia && (mediaKind === 'image' || mediaKind === 'sticker');
 
   // Close the menu on outside click or Escape.
   useEffect(() => {
@@ -53,6 +61,52 @@ export function MessageBubbleActions({ message: msg, align = 'start' }: MessageB
       ?.writeText(copyText)
       .then(() => toast({ tone: 'success', title: 'Copied', description: 'Message text copied.' }))
       .catch(() => toast({ tone: 'danger', title: 'Copy failed', description: 'Could not access the clipboard.' }));
+  };
+
+  const onDownload = () => {
+    setMenuOpen(false);
+    fetch(api.mediaUrl(msg.id))
+      .then((res) => {
+        if (!res.ok) throw new Error('Download failed');
+        return res.blob();
+      })
+      .then((blob) => {
+        const ext = extensionForMimetype(msg.media_mimetype);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `whatsapp-${msg.id}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      })
+      .catch((e) =>
+        toast({
+          tone: 'danger',
+          title: 'Download failed',
+          description: e instanceof Error ? e.message : 'Please try again.',
+        }),
+      );
+  };
+
+  const onCopyImage = () => {
+    setMenuOpen(false);
+    fetch(api.mediaUrl(msg.id))
+      .then((res) => {
+        if (!res.ok) throw new Error('Copy failed');
+        return res.blob();
+      })
+      .then((blob) => (blob.type === 'image/png' ? blob : toPngBlob(blob)))
+      .then((pngBlob) => navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]))
+      .then(() => toast({ tone: 'success', title: 'Copied', description: 'Image copied to clipboard.' }))
+      .catch((e) =>
+        toast({
+          tone: 'danger',
+          title: 'Copy failed',
+          description: e instanceof Error ? e.message : 'Could not copy the image.',
+        }),
+      );
   };
 
   const onTranslate = () => {
@@ -97,6 +151,8 @@ export function MessageBubbleActions({ message: msg, align = 'start' }: MessageB
           )}
         >
           <MenuItem icon="copy" label="Copy text" disabled={!canCopy} onClick={onCopy} />
+          {isImage && <MenuItem icon="image" label="Copy image" onClick={onCopyImage} />}
+          {hasMedia && <MenuItem icon="download" label="Download" onClick={onDownload} />}
           <MenuItem
             icon="languages"
             label="Translate to English"
@@ -137,5 +193,24 @@ function MenuItem({
       <Icon name={icon} size={15} className="shrink-0 text-fg-muted" />
       {label}
     </button>
+  );
+}
+
+/** Re-encode any image blob to PNG — the one format every OS clipboard reliably accepts. */
+function toPngBlob(blob: Blob): Promise<Blob> {
+  return createImageBitmap(blob).then(
+    (bitmap) =>
+      new Promise<Blob>((resolve, reject) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas unavailable'));
+          return;
+        }
+        ctx.drawImage(bitmap, 0, 0);
+        canvas.toBlob((out) => (out ? resolve(out) : reject(new Error('Could not convert image'))), 'image/png');
+      }),
   );
 }
