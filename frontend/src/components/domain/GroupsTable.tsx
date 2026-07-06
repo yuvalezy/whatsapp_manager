@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { IconButton } from '@/components/ui/IconButton';
 import { Icon } from '@/components/ui/Icon';
+import { Input } from '@/components/ui/Input';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { SortableTh } from '@/components/ui/SortableTh';
+import { compareValues, matchesSearch } from '@/lib/tableUtils';
+import { useSortState } from '@/hooks/useSortState';
 import { RelativeTime } from './RelativeTime';
 import type { GroupEntry } from '@/types';
 
@@ -26,8 +30,34 @@ export interface GroupsTableProps {
 const TH = 'bg-surface-2 border-b border-line-strong px-4 py-[11px] text-left text-[11.5px] font-bold uppercase tracking-[0.04em] text-fg-secondary';
 const TD = 'px-4 py-3 text-[13.5px] text-fg';
 
+type GroupsSortKey = 'subject' | 'ezy_bp_name' | 'created_at';
+
+function sortValue(row: GroupEntry, key: GroupsSortKey): string {
+  switch (key) {
+    case 'subject':
+      return row.subject || row.group_id;
+    case 'ezy_bp_name':
+      return row.ezy_bp_name ?? '';
+    case 'created_at':
+      return row.created_at;
+  }
+}
+
 export function GroupsTable({ rows = [], loading = false, deletingId, onDelete, onLink, className }: GroupsTableProps) {
   const [pending, setPending] = useState<GroupEntry | null>(null);
+  const [search, setSearch] = useState('');
+  const { sortKey, sortDir, toggleSort } = useSortState<GroupsSortKey>();
+
+  const filteredRows = useMemo(
+    () => rows.filter((row) => matchesSearch(search, row.subject, row.group_id, row.ezy_bp_name)),
+    [rows, search],
+  );
+
+  const sortedRows = useMemo(() => {
+    if (!sortKey) return filteredRows;
+    const dirMul = sortDir === 'asc' ? 1 : -1;
+    return [...filteredRows].sort((a, b) => dirMul * compareValues(sortValue(a, sortKey), sortValue(b, sortKey)));
+  }, [filteredRows, sortKey, sortDir]);
 
   if (loading) {
     return (
@@ -53,17 +83,25 @@ export function GroupsTable({ rows = [], loading = false, deletingId, onDelete, 
   return (
     <div className={cn('font-sans', className)}>
       <div className="overflow-hidden rounded-wm-card border border-line-strong bg-surface">
+        <div className="border-b border-line-strong px-4 py-3">
+          <div className="max-w-[280px]">
+            <Input type="search" placeholder="Search groups…" value={search} icon="search" onChange={setSearch} />
+          </div>
+        </div>
+        {sortedRows.length === 0 ? (
+          <div className="py-6 text-center text-[13px] text-fg-muted">No matches for "{search}".</div>
+        ) : (
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              <th className={TH}>Group</th>
-              <th className={TH}>Business Partner</th>
-              <th className={TH}>Added</th>
+              <SortableTh label="Group" sortKey="subject" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as GroupsSortKey)} />
+              <SortableTh label="Business Partner" sortKey="ezy_bp_name" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as GroupsSortKey)} />
+              <SortableTh label="Added" sortKey="created_at" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as GroupsSortKey)} />
               <th className={cn(TH, 'w-20')} aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {sortedRows.map((row) => (
               <tr
                 key={row.id}
                 className="border-b border-line-strong transition-colors duration-100 last:border-b-0 hover:bg-surface-2"
@@ -109,6 +147,7 @@ export function GroupsTable({ rows = [], loading = false, deletingId, onDelete, 
             ))}
           </tbody>
         </table>
+        )}
       </div>
 
       <ConfirmDialog

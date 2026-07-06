@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -7,7 +7,10 @@ import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
 import { Select, type SelectOption } from '@/components/ui/Select';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { SortableTh } from '@/components/ui/SortableTh';
 import { formatPhone } from '@/lib/format';
+import { compareValues, matchesSearch } from '@/lib/tableUtils';
+import { useSortState } from '@/hooks/useSortState';
 import { PhoneNumber } from './PhoneNumber';
 import { RelativeTime } from './RelativeTime';
 import type { PreferredLanguage, WhitelistEntry } from '@/types';
@@ -47,11 +50,52 @@ export interface WhitelistTableProps {
 const TH = 'bg-surface-2 border-b border-line-strong px-4 py-[11px] text-left text-[11.5px] font-bold uppercase tracking-[0.04em] text-fg-secondary';
 const TD = 'px-4 py-3 text-[13.5px] text-fg';
 
+type WhitelistSortKey = 'phone_number' | 'label' | 'preferred_language' | 'ezy_bp_name' | 'created_at';
+
+function sortValue(row: WhitelistEntry, key: WhitelistSortKey): string {
+  switch (key) {
+    case 'phone_number':
+      return row.phone_number;
+    case 'label':
+      return row.label ?? '';
+    case 'preferred_language':
+      return LANGUAGE_LABEL[row.preferred_language];
+    case 'ezy_bp_name':
+      return row.ezy_bp_name ?? '';
+    case 'created_at':
+      return row.created_at;
+  }
+}
+
 export function WhitelistTable({ rows = [], loading = false, deletingId, onDelete, onLink, onUpdate, className }: WhitelistTableProps) {
   const [pending, setPending] = useState<WhitelistEntry | null>(null);
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [draftLabel, setDraftLabel] = useState('');
   const [draftLang, setDraftLang] = useState<PreferredLanguage>('es');
+  const [search, setSearch] = useState('');
+  const { sortKey, sortDir, toggleSort } = useSortState<WhitelistSortKey>();
+
+  const filteredRows = useMemo(
+    () =>
+      rows.filter((row) =>
+        matchesSearch(
+          search,
+          row.phone_number,
+          formatPhone(row.phone_number),
+          row.label,
+          row.ezy_bp_name,
+          row.ezy_contact_name,
+          LANGUAGE_LABEL[row.preferred_language],
+        ),
+      ),
+    [rows, search],
+  );
+
+  const sortedRows = useMemo(() => {
+    if (!sortKey) return filteredRows;
+    const dirMul = sortDir === 'asc' ? 1 : -1;
+    return [...filteredRows].sort((a, b) => dirMul * compareValues(sortValue(a, sortKey), sortValue(b, sortKey)));
+  }, [filteredRows, sortKey, sortDir]);
 
   const beginEdit = (row: WhitelistEntry) => {
     setEditingId(row.id);
@@ -89,19 +133,27 @@ export function WhitelistTable({ rows = [], loading = false, deletingId, onDelet
   return (
     <div className={cn('font-sans', className)}>
       <div className="overflow-hidden rounded-wm-card border border-line-strong bg-surface">
+        <div className="border-b border-line-strong px-4 py-3">
+          <div className="max-w-[280px]">
+            <Input type="search" placeholder="Search whitelist…" value={search} icon="search" onChange={setSearch} />
+          </div>
+        </div>
+        {sortedRows.length === 0 ? (
+          <div className="py-6 text-center text-[13px] text-fg-muted">No matches for "{search}".</div>
+        ) : (
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              <th className={TH}>Number</th>
-              <th className={TH}>Label</th>
-              <th className={TH}>Lang</th>
-              <th className={TH}>EZY Portal</th>
-              <th className={TH}>Added</th>
+              <SortableTh label="Number" sortKey="phone_number" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as WhitelistSortKey)} />
+              <SortableTh label="Label" sortKey="label" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as WhitelistSortKey)} />
+              <SortableTh label="Lang" sortKey="preferred_language" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as WhitelistSortKey)} />
+              <SortableTh label="EZY Portal" sortKey="ezy_bp_name" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as WhitelistSortKey)} />
+              <SortableTh label="Added" sortKey="created_at" activeKey={sortKey} dir={sortDir} onSort={(k) => toggleSort(k as WhitelistSortKey)} />
               <th className={cn(TH, 'w-20')} aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
+            {sortedRows.map((row) => {
               const isEditing = editingId === row.id;
               return (
               <tr
@@ -211,6 +263,7 @@ export function WhitelistTable({ rows = [], loading = false, deletingId, onDelet
             })}
           </tbody>
         </table>
+        )}
       </div>
 
       <ConfirmDialog
