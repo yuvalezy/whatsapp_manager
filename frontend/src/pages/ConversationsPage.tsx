@@ -23,13 +23,14 @@ import {
   DEFAULT_THREAD_PAGE,
 } from '@/hooks/useThreads';
 import { useStatus } from '@/hooks/useStatus';
-import { useWhitelist } from '@/hooks/useWhitelist';
+import { useWhitelist, useAddWhitelist } from '@/hooks/useWhitelist';
 import { useSummarize } from '@/hooks/useSummaries';
 import { SummarizeModal } from '@/components/domain/SummarizeModal';
 import { SummaryHistoryModal } from '@/components/domain/SummaryHistoryModal';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { api } from '@/lib/api';
 import { dayKey, formatPhone, normalizeNumber } from '@/lib/format';
-import type { ComposeState, StoredMessage, SummarizeInput } from '@/types';
+import type { ComposeState, MessageMention, StoredMessage, SummarizeInput } from '@/types';
 
 // Newest-page size loaded by useConversationThread; older pages start past it.
 const THREAD_PAGE = DEFAULT_THREAD_PAGE;
@@ -108,6 +109,12 @@ export function ConversationsPage() {
   const [messageCount, setMessageCount] = useState(1);
   const [replyTarget, setReplyTarget] = useState<StoredMessage | null>(null);
   const [search, setSearch] = useState('');
+  // Clicking a non-whitelisted @mention stages it here → drives a confirm dialog
+  // (add to contacts + open chat). Transient ring after a quote-jump.
+  const [confirmMention, setConfirmMention] = useState<MessageMention | null>(null);
+  const [flashedId, setFlashedId] = useState<string | null>(null);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addWhitelist = useAddWhitelist();
 
   // In-thread find state.
   const [findOpen, setFindOpen] = useState(false);
@@ -318,6 +325,55 @@ export function ConversationsPage() {
     setReplyTarget(message);
     if (composeState === 'idle') setComposeState('composing');
   };
+
+  // Click a resolved @mention: whitelisted → jump to their thread; otherwise
+  // confirm adding them to contacts (using the captured WhatsApp name) so the
+  // user can message them directly.
+  const handleMentionClick = (mention: MessageMention) => {
+    if (whitelistNames.has(mention.number)) {
+      setSearchParams({ number: mention.number });
+    } else {
+      setConfirmMention(mention);
+    }
+  };
+
+  const confirmAddMention = () => {
+    if (!confirmMention) return;
+    const { number, name } = confirmMention;
+    addWhitelist.mutate(
+      { number, label: name ?? undefined },
+      {
+        onSuccess: () => {
+          setConfirmMention(null);
+          setSearchParams({ number });
+          toast({ tone: 'success', title: `Added ${name || formatPhone(number)} to contacts` });
+        },
+        onError: (e) =>
+          toast({
+            tone: 'danger',
+            title: 'Could not add contact',
+            description: e instanceof Error ? e.message : 'Please try again.',
+          }),
+      },
+    );
+  };
+
+  // Click a quoted-reply strip: scroll the original message into view and flash
+  // it. The strip only renders when the original is already loaded, so it's in
+  // the DOM (looked up by its data-mid).
+  const handleQuoteJump = (messageId: string) => {
+    const el = scrollRef.current?.querySelector<HTMLElement>(`[data-mid="${CSS.escape(messageId)}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setFlashedId(messageId);
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setFlashedId(null), 1500);
+  };
+
+  // Clear the quote-jump flash timer on unmount (avoids a stray setState).
+  useEffect(() => () => {
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+  }, []);
 
   const handleScroll = () => {
     const el = scrollRef.current;
@@ -613,6 +669,9 @@ export function ConversationsPage() {
                             onReply={handleReply}
                             quotedMessage={m.reply_to_message_id ? quotedById.get(m.reply_to_message_id) : undefined}
                             whitelistNames={whitelistNames}
+                            onMentionClick={handleMentionClick}
+                            onQuoteJump={handleQuoteJump}
+                            flash={flashedId === m.message_id}
                           />
                         </Fragment>
                       );
@@ -665,6 +724,19 @@ export function ConversationsPage() {
         number={selected}
         initialId={lastSummaryId}
         onClose={() => setHistoryOpen(false)}
+      />
+      <ConfirmDialog
+        open={confirmMention !== null}
+        title="Add to contacts?"
+        description={
+          confirmMention
+            ? `Add ${confirmMention.name || formatPhone(confirmMention.number)} to your contacts and open a chat? You'll be able to message them directly.`
+            : undefined
+        }
+        confirmLabel="Add & open"
+        loading={addWhitelist.isPending}
+        onConfirm={confirmAddMention}
+        onCancel={() => setConfirmMention(null)}
       />
     </div>
   );

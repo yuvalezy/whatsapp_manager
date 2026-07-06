@@ -27,6 +27,7 @@ import type {
   AvailableGroup,
   GroupEntry,
   GroupEzyLinkInput,
+  GroupParticipant,
   HealthData,
   MessageSearchResult,
   MessageStats,
@@ -167,6 +168,9 @@ export const api = {
   // Monitored groups + the "add group conversations" picker + BP-only linking.
   listGroups: () => request<GroupEntry[]>('/groups'),
   listAvailableGroups: () => request<AvailableGroup[]>('/groups/available'),
+  // Live member list of a monitored group (for the compose @-mention picker).
+  listGroupParticipants: (groupId: string) =>
+    request<GroupParticipant[]>(`/groups/${encodeURIComponent(groupId)}/participants`),
   addGroup: (groupId: string, chatId: string, subject?: string) =>
     request<GroupEntry>('/groups', {
       method: 'POST',
@@ -335,19 +339,28 @@ export const api = {
   // whitelisted; group must be monitored. `quotedMessageId` (a message_id from
   // the same thread) sends the message as a WhatsApp quoted reply. `attachment`
   // sends a media message with `message` as its caption (may be omitted).
-  sendMessage: (number: string, message: string, quotedMessageId?: string, attachment?: OutboundAttachment) =>
+  // `mentions` (serialized jids) natively tags people — `message` must already
+  // carry the matching `@<user>` tokens (built by the compose box).
+  sendMessage: (
+    number: string,
+    message: string,
+    quotedMessageId?: string,
+    attachment?: OutboundAttachment,
+    mentions?: string[],
+  ) =>
     request<{ messageId: string }>('/outbound/send', {
       method: 'POST',
-      body: JSON.stringify({ number, message, quotedMessageId, attachment }),
+      body: JSON.stringify({ number, message, quotedMessageId, attachment, mentions }),
     }),
   sendGroupMessage: (
     groupId: string,
     message: string,
     quotedMessageId?: string,
     attachment?: OutboundAttachment,
+    mentions?: string[],
   ) =>
     request<{ messageId: string }>('/outbound/send', {
       method: 'POST',
-      body: JSON.stringify({ groupId, message, quotedMessageId, attachment }),
+      body: JSON.stringify({ groupId, message, quotedMessageId, attachment, mentions }),
     }),
 };

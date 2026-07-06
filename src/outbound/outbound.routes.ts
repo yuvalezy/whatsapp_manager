@@ -51,15 +51,31 @@ outboundRouter.use((_req, res, next) => {
 // then becomes its caption (and may be omitted entirely for an unlabeled send).
 outboundRouter.post('/send', limiter, async (req, res, next) => {
   try {
-    const { number, message, groupId, quotedMessageId, attachment } = (req.body ?? {}) as {
+    const { number, message, groupId, quotedMessageId, attachment, mentions } = (req.body ?? {}) as {
       number?: unknown;
       message?: unknown;
       groupId?: unknown;
       quotedMessageId?: unknown;
       attachment?: unknown;
+      mentions?: unknown;
     };
 
     const hasMessage = typeof message === 'string' && message.trim() !== '';
+
+    // Optional @mentions — serialized WIDs (`<number>@c.us` / `<lid>@lid`). The
+    // body (`message`) must already carry the matching `@<user>` tokens (the
+    // frontend builds both together); we just forward the jids to whatsapp-web.js.
+    let mentionJids: string[] = [];
+    if (mentions !== undefined) {
+      if (
+        !Array.isArray(mentions) ||
+        !mentions.every((m) => typeof m === 'string' && (m.endsWith('@c.us') || m.endsWith('@lid')))
+      ) {
+        res.status(400).json({ error: '"mentions" must be an array of "<id>@c.us"/"<id>@lid" jids' });
+        return;
+      }
+      mentionJids = mentions as string[];
+    }
 
     // Validated + size-capped BEFORE any whitelist lookup or WhatsApp send —
     // cheapest checks first, and we never want to burn an irreversible send on
@@ -134,15 +150,19 @@ outboundRouter.post('/send', limiter, async (req, res, next) => {
       return;
     }
 
+    const sendOptions = {
+      ...(quoteId ? { quotedMessageId: quoteId } : {}),
+      ...(mentionJids.length ? { mentions: mentionJids } : {}),
+    };
     const sent = media
       ? await client.sendMessage(
           chatId,
           new MessageMedia(media.mimetype, media.base64, media.filename, media.buffer.length),
-          { caption: hasMessage ? String(message) : undefined, quotedMessageId: quoteId },
+          { caption: hasMessage ? String(message) : undefined, ...sendOptions },
         )
-      : await client.sendMessage(chatId, String(message), quoteId ? { quotedMessageId: quoteId } : undefined);
+      : await client.sendMessage(chatId, String(message), sendOptions);
     logger.warn(
-      { to: threadKey, messageId: sent.id._serialized, hasMedia: Boolean(media) },
+      { to: threadKey, messageId: sent.id._serialized, hasMedia: Boolean(media), mentions: mentionJids.length },
       'OUTBOUND message sent',
     );
 

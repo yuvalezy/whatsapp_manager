@@ -1,14 +1,47 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { useToast } from '@/components/ui/Toast';
 import { MessageTypeBadge } from './MessageTypeBadge';
+import { MentionAutocomplete } from './MentionAutocomplete';
 import { cn } from '@/lib/cn';
 import { fileToBase64 } from '@/lib/file';
-import { formatBytes } from '@/lib/format';
-import type { ComposeState, DraftReplyResult, StoredMessage } from '@/types';
+import { formatBytes, formatPhone } from '@/lib/format';
+import type { ComposeState, DraftReplyResult, GroupParticipant, StoredMessage } from '@/types';
 import { useDraftReply, useSendMessage } from '@/hooks/useDraftReply';
+import { useGroupParticipants } from '@/hooks/useGroups';
+
+// A mention the user inserted into the draft: the exact visible `@Name` token,
+// the WhatsApp `@<user>` token to swap in at send, and the jid to tag.
+interface DraftMention {
+  display: string;
+  user: string;
+  jid: string;
+}
+
+// The active `@query` token immediately before the caret (start = index of '@').
+function detectMention(value: string, caret: number): { query: string; start: number } | null {
+  const upto = value.slice(0, caret);
+  const m = /(?:^|\s)@([^\s@]*)$/.exec(upto);
+  if (!m) return null;
+  return { query: m[1], start: caret - m[1].length - 1 };
+}
+
+// Rewrite the visible draft into what WhatsApp receives: each still-present
+// `@Name` token → `@<user>` (the digits WhatsApp anchors the mention on), and
+// collect that mention's jid. Mentions the user deleted are silently dropped.
+function buildOutgoing(text: string, mentions: DraftMention[]): { body: string; mentions: string[] } {
+  let body = text;
+  const jids: string[] = [];
+  for (const m of mentions) {
+    const idx = body.indexOf(m.display);
+    if (idx === -1) continue;
+    body = body.slice(0, idx) + `@${m.user}` + body.slice(idx + m.display.length);
+    jids.push(m.jid);
+  }
+  return { body, mentions: jids };
+}
 
 interface StagedAttachment {
   file: File;
@@ -63,6 +96,20 @@ export function ComposeReply({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
+
+  // @-mention state (groups only): the active query token, the highlighted row,
+  // and the mentions inserted so far (for the send-time body rewrite).
+  const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [selectedMentions, setSelectedMentions] = useState<DraftMention[]>([]);
+  const participants = useGroupParticipants(contactNumber, isGroup && mention !== null);
+  const mentionCandidates = useMemo<GroupParticipant[]>(() => {
+    if (!mention) return [];
+    const q = mention.query.toLowerCase();
+    return (participants.data ?? [])
+      .filter((p) => !q || (p.name ?? '').toLowerCase().includes(q) || p.number.includes(q))
+      .slice(0, 6);
+  }, [mention, participants.data]);
 
   const draftReply = useDraftReply();
   const sendMessage = useSendMessage();
@@ -143,12 +190,36 @@ export function ComposeReply({
     setEnglishDraft('');
     setTranslatedDraft('');
     setSendingWhich(null);
+    setSelectedMentions([]);
+    setMention(null);
     clearAttachment();
     onComposeStateChange('idle');
     onClearReply();
   };
 
-  const doSend = (text: string, which: 'english' | 'translated') => {
+  // Replace the active `@query` token with the picked person's `@Name` and
+  // record the mention (for the send-time body rewrite). Keeps the caret after
+  // the inserted token.
+  const acceptMention = (p: GroupParticipant) => {
+    if (!mention) return;
+    const display = `@${p.name ?? formatPhone(p.number)}`;
+    const before = draft.slice(0, mention.start);
+    const after = draft.slice(mention.start + 1 + mention.query.length);
+    const insert = `${display} `;
+    setDraft(before + insert + after);
+    setSelectedMentions((prev) => [...prev, { display, user: p.user, jid: p.jid }]);
+    setMention(null);
+    const caret = before.length + insert.length;
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(caret, caret);
+      }
+    });
+  };
+
+  const doSend = (text: string, which: 'english' | 'translated', mentions: string[] = []) => {
     const messageToSend = text.trim();
     if (!messageToSend && !attachment) return;
     setSendingWhich(which);
@@ -163,6 +234,7 @@ export function ComposeReply({
         attachment: attachment
           ? { data: attachment.data, mimetype: attachment.mimetype, filename: attachment.filename }
           : undefined,
+        mentions: mentions.length ? mentions : undefined,
       },
       {
         onSuccess: () => {
@@ -200,12 +272,41 @@ export function ComposeReply({
 
   const handleDirectSend = () => {
     if ((!draft.trim() && !attachment) || isBusy) return;
-    doSend(draft, 'english');
+    // Groups: rewrite `@Name` tokens → `@<user>` + collect jids so WhatsApp tags
+    // them. (Mentions apply to this direct-send path only — the AI-draft path
+    // rewrites the text and would lose the tokens.)
+    const { body, mentions } = isGroup ? buildOutgoing(draft, selectedMentions) : { body: draft, mentions: [] };
+    doSend(body, 'english', mentions);
     setDraft('');
+    setSelectedMentions([]);
     clearAttachment();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // When the @-mention picker is open, it owns the navigation keys.
+    if (mention && mentionCandidates.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex((i) => (i + 1) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex((i) => (i - 1 + mentionCandidates.length) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        acceptMention(mentionCandidates[Math.min(mentionIndex, mentionCandidates.length - 1)]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMention(null);
+        return;
+      }
+    }
+
     const mod = e.ctrlKey || e.metaKey;
     if (composeState === 'composing' && mod && e.key === 'Enter') {
       e.preventDefault();
@@ -218,6 +319,14 @@ export function ComposeReply({
       resetState();
     }
     // plain Enter (and Shift+Enter): no handling → textarea inserts a newline
+  };
+
+  // Re-scan for an active `@query` after a draft edit (groups only).
+  const refreshMention = (value: string, caret: number | null) => {
+    if (!isGroup) return;
+    const found = detectMention(value, caret ?? value.length);
+    setMention(found);
+    setMentionIndex(0);
   };
 
   const DraftRow = ({
@@ -343,17 +452,34 @@ export function ComposeReply({
           </div>
         )}
         <div className="flex items-start gap-2">
-          <div className="flex flex-1 flex-col gap-1">
+          <div className="relative flex flex-1 flex-col gap-1">
+            {mention && (
+              <MentionAutocomplete
+                candidates={mentionCandidates}
+                activeIndex={mentionIndex}
+                onSelect={acceptMention}
+                onHover={setMentionIndex}
+              />
+            )}
             <textarea
               ref={textareaRef}
               value={draft}
               onChange={(e) => {
                 setDraft(e.target.value);
                 if (composeState === 'idle') onComposeStateChange('composing');
+                refreshMention(e.target.value, e.target.selectionStart);
               }}
               onFocus={() => {
                 if (composeState === 'idle') onComposeStateChange('composing');
               }}
+              onClick={(e) => refreshMention(e.currentTarget.value, e.currentTarget.selectionStart)}
+              onKeyUp={(e) => {
+                // Caret-moving keys (arrows/home/end) can enter or leave an @token
+                // without changing the text — re-scan. Skip keys the picker owns.
+                if (mention && ['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].includes(e.key)) return;
+                refreshMention(e.currentTarget.value, e.currentTarget.selectionStart);
+              }}
+              onBlur={() => setMention(null)}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               disabled={isBusy}
@@ -361,7 +487,9 @@ export function ComposeReply({
               placeholder={
                 attachment
                   ? 'Add a caption (optional)…'
-                  : 'Write what you want to say — AI will polish it into a natural reply…'
+                  : isGroup
+                    ? 'Write a message — type @ to mention someone…'
+                    : 'Write what you want to say — AI will polish it into a natural reply…'
               }
               className="w-full resize-none rounded-[10px] border border-line-strong bg-bg px-3 py-2 text-[13.5px] text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none disabled:opacity-60"
             />

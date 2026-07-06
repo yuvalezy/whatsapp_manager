@@ -26,12 +26,13 @@ export function useSendMessage() {
       isGroup?: boolean;
       quotedMessageId?: string;
       attachment?: OutboundAttachment;
+      mentions?: string[];
     }
   >({
-    mutationFn: ({ number, message, isGroup, quotedMessageId, attachment }) =>
+    mutationFn: ({ number, message, isGroup, quotedMessageId, attachment, mentions }) =>
       isGroup
-        ? api.sendGroupMessage(number, message, quotedMessageId, attachment)
-        : api.sendMessage(number, message, quotedMessageId, attachment),
+        ? api.sendGroupMessage(number, message, quotedMessageId, attachment, mentions)
+        : api.sendMessage(number, message, quotedMessageId, attachment, mentions),
     onSuccess: (_data, variables) => {
       const normalized = normalizeNumber(variables.number);
       void qc.invalidateQueries({ queryKey: ['messages', 'by-number', normalized] });

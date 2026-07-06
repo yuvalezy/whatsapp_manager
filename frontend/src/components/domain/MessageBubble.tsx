@@ -33,6 +33,12 @@ export interface MessageBubbleProps {
   quotedMessage?: StoredMessage;
   /** phone_number → display name, for resolving @mentions to whitelisted contacts. */
   whitelistNames?: Map<string, string>;
+  /** Click a resolved @mention → open/whitelist that person (handled by the page). */
+  onMentionClick?: (mention: MessageMention) => void;
+  /** Click the quoted-reply strip → scroll to the original message (by message_id). */
+  onQuoteJump?: (messageId: string) => void;
+  /** Transient highlight, e.g. right after another bubble's quote jumped here. */
+  flash?: boolean;
 }
 
 export function MessageBubble({
@@ -44,6 +50,9 @@ export function MessageBubble({
   onReply,
   quotedMessage,
   whitelistNames,
+  onMentionClick,
+  onQuoteJump,
+  flash = false,
 }: MessageBubbleProps) {
   const isOutbound = msg.direction === 'outbound';
   const hasMediaFile = msg.media_status === 'downloaded';
@@ -66,6 +75,7 @@ export function MessageBubble({
   return (
     <div
       ref={rowRef}
+      data-mid={msg.message_id}
       className={cn(
         'group flex items-center gap-1',
         isOutbound ? 'justify-end' : 'justify-start',
@@ -75,17 +85,23 @@ export function MessageBubble({
       {isOutbound && <MessageBubbleActions message={msg} align="end" onReply={onReply} />}
       <div
         className={cn(
-          'flex max-w-[min(70%,480px)] flex-col gap-1.5 px-3.5 py-2.5 text-fg',
+          'flex max-w-[min(70%,480px)] flex-col gap-1.5 px-3.5 py-2.5 text-fg transition-shadow',
           isOutbound
             ? 'rounded-[14px] rounded-br-[4px] bg-primary-soft'
             : 'rounded-[14px] rounded-bl-[4px] border border-line-strong bg-surface-2',
           activeMatch && 'ring-2 ring-warning ring-offset-2 ring-offset-bg',
+          flash && !activeMatch && 'ring-2 ring-primary ring-offset-2 ring-offset-bg',
         )}
       >
         {showSender && !isOutbound && msg.sender_name && (
           <span className="text-[11.5px] font-semibold text-primary">{msg.sender_name}</span>
         )}
-        {quotedMessage && <QuotedSnippet message={quotedMessage} />}
+        {quotedMessage && (
+          <QuotedSnippet
+            message={quotedMessage}
+            onJump={onQuoteJump ? () => onQuoteJump(quotedMessage.message_id) : undefined}
+          />
+        )}
         {hasMediaFile && <BubbleMedia message={msg} />}
         {hasBody && (
           <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed">
@@ -94,6 +110,7 @@ export function MessageBubble({
               mentions={msg.mentions}
               whitelistNames={whitelistNames}
               findTerm={findTerm}
+              onMentionClick={onMentionClick}
             />
           </p>
         )}
@@ -155,11 +172,13 @@ function MessageBodyText({
   mentions,
   whitelistNames,
   findTerm,
+  onMentionClick,
 }: {
   body: string;
   mentions?: MessageMention[] | null;
   whitelistNames?: Map<string, string>;
   findTerm?: string;
+  onMentionClick?: (mention: MessageMention) => void;
 }) {
   if (!mentions?.length) {
     return <HighlightText text={body} term={findTerm} whole />;
@@ -176,9 +195,23 @@ function MessageBodyText({
       {parts.map((part, i) => {
         if (i % 2 === 1) {
           const mention = byId.get(part);
-          return (
+          if (!mention) return <span key={i} className="font-semibold text-primary">{`@${part}`}</span>;
+          const label = mentionDisplayText(mention, whitelistNames);
+          // Clickable only when we have a real number to act on (a failed-LID
+          // fallback leaves number === id, an over-long opaque digit string).
+          const clickable = onMentionClick && isUsableNumber(mention.number);
+          return clickable ? (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onMentionClick!(mention)}
+              className="font-semibold text-primary hover:underline"
+            >
+              {label}
+            </button>
+          ) : (
             <span key={i} className="font-semibold text-primary">
-              {mention ? mentionDisplayText(mention, whitelistNames) : `@${part}`}
+              {label}
             </span>
           );
         }
@@ -188,11 +221,19 @@ function MessageBodyText({
   );
 }
 
-/** The quoted-message strip shown above a bubble's own content when it's a reply. */
-function QuotedSnippet({ message }: { message: StoredMessage }) {
+/** A resolved mention number we can navigate/whitelist to (E.164-ish, 7–15 digits). */
+function isUsableNumber(number: string): boolean {
+  return /^\d{7,15}$/.test(number);
+}
+
+/**
+ * The quoted-message strip shown above a bubble's own content when it's a reply.
+ * When `onJump` is given it becomes a button that scrolls to the original message.
+ */
+function QuotedSnippet({ message, onJump }: { message: StoredMessage; onJump?: () => void }) {
   const text = message.body?.trim() || message.transcript?.trim() || '';
-  return (
-    <div className="flex flex-col gap-0.5 rounded-[6px] border-l-2 border-primary bg-surface px-2 py-1 text-[12px] text-fg-secondary">
+  const inner = (
+    <>
       {message.sender_name && (
         <span className="text-[11px] font-semibold text-primary">{message.sender_name}</span>
       )}
@@ -201,7 +242,16 @@ function QuotedSnippet({ message }: { message: StoredMessage }) {
       ) : (
         <MessageTypeBadge messageType={message.message_type} />
       )}
-    </div>
+    </>
+  );
+  const base =
+    'flex flex-col gap-0.5 rounded-[6px] border-l-2 border-primary bg-surface px-2 py-1 text-left text-[12px] text-fg-secondary';
+  return onJump ? (
+    <button type="button" onClick={onJump} className={cn(base, 'hover:bg-surface-2')} title="Jump to message">
+      {inner}
+    </button>
+  ) : (
+    <div className={base}>{inner}</div>
   );
 }
 

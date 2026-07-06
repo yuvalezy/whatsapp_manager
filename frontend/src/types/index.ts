@@ -149,6 +149,17 @@ export interface AvailableGroup {
   monitored: boolean;
 }
 
+// A live member of a monitored group, for the compose @-mention picker.
+//   jid    — serialized WID; passed in the send's `mentions[]` to tag them.
+//   user   — the jid's user part; the "@<user>" token embedded in the sent body.
+//   number — resolved real phone (LID-aware), for display + whitelist matching.
+export interface GroupParticipant {
+  jid: string;
+  user: string;
+  number: string;
+  name: string | null;
+}
+
 // Group → business partner link (BP only — no contact).
 export interface GroupEzyLinkInput {
   bpId: string;
