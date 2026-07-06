@@ -13,11 +13,9 @@ ENVFILE="$ROOT_DIR/.env.test"
 [ -f "$ENVFILE" ] || { echo "✗ $ENVFILE missing"; exit 1; }
 [ -f "$CERT" ]    || { echo "✗ dev cert not found: $CERT"; exit 1; }
 
-# Free port 3000 — you run only the test now. Kills prod + any prior test.
+# Free port 3000 — you run only the test now. Kills prod + any prior test
+# (stop.sh already handles both the wm-debug and wm-test tmux sessions).
 bash "$ROOT_DIR/stop.sh" 2>/dev/null || true
-tmux kill-session -t wm-debug 2>/dev/null || true
-tmux kill-session -t "$SESSION" 2>/dev/null || true
-sleep 1 2>/dev/null || true
 
 tmux new-session -d -s "$SESSION" -n dev -c "$ROOT_DIR"
 tmux send-keys -t "$SESSION:dev.0" \
