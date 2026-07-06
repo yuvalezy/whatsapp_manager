@@ -107,7 +107,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ toast }}>
       {children}
       {createPortal(
-        <div className="pointer-events-none fixed bottom-5 right-5 z-[1100] flex flex-col gap-2.5">
+        <div className="pointer-events-none fixed top-5 right-5 z-[1100] flex flex-col gap-2.5">
           {items.map((t) => (
             <div key={t.id} className="pointer-events-auto animate-wm-scale-in">
               <AutoToast {...t} onClose={() => dismiss(t.id)} />

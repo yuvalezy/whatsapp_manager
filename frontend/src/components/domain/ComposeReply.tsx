@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/Toast';
 import { MessageTypeBadge } from './MessageTypeBadge';
 import { MessageBodyText } from './MessageBubble';
 import { MentionAutocomplete } from './MentionAutocomplete';
+import { EmojiPicker } from './EmojiPicker';
 import { cn } from '@/lib/cn';
 import { fileToBase64 } from '@/lib/file';
 import { formatBytes, formatPhone } from '@/lib/format';
@@ -95,6 +96,7 @@ export function ComposeReply({
   const [targetLanguage, setTargetLanguage] = useState('es');
   const [sendingWhich, setSendingWhich] = useState<'english' | 'translated' | null>(null);
   const [attachment, setAttachment] = useState<StagedAttachment | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const attachmentRef = useRef<StagedAttachment | null>(null);
   attachmentRef.current = attachment;
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -196,12 +198,32 @@ export function ComposeReply({
     setSendingWhich(null);
     setSelectedMentions([]);
     setMention(null);
+    setShowEmojiPicker(false);
     clearAttachment();
     onComposeStateChange('idle');
     onClearReply();
     // The textarea is disabled while sending — re-enabling happens on this same
     // render, so wait a frame before stealing focus back for the next message.
     requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  // Insert an emoji at the caret (or append, if the textarea never had focus)
+  // and put the caret right after it — mirrors acceptMention's caret handling.
+  const insertEmoji = (emoji: string) => {
+    const el = textareaRef.current;
+    const start = el?.selectionStart ?? draft.length;
+    const end = el?.selectionEnd ?? draft.length;
+    const next = draft.slice(0, start) + emoji + draft.slice(end);
+    setDraft(next);
+    if (composeState === 'idle') onComposeStateChange('composing');
+    const caret = start + emoji.length;
+    requestAnimationFrame(() => {
+      const el2 = textareaRef.current;
+      if (el2) {
+        el2.focus();
+        el2.setSelectionRange(caret, caret);
+      }
+    });
   };
 
   // Replace the active `@query` token with the picked person's `@Name` and
@@ -552,6 +574,19 @@ export function ComposeReply({
               disabled={isBusy || showEditors}
               onClick={() => fileInputRef.current?.click()}
             />
+            <div className="relative">
+              <IconButton
+                icon="smile"
+                ariaLabel="Insert emoji"
+                variant="solid"
+                size="sm"
+                disabled={isBusy || showEditors}
+                onClick={() => setShowEmojiPicker((v) => !v)}
+              />
+              {showEmojiPicker && (
+                <EmojiPicker onSelect={insertEmoji} onClose={() => setShowEmojiPicker(false)} />
+              )}
+            </div>
             <Button
               variant="secondary"
               size="sm"
