@@ -717,6 +717,26 @@ class MessageService {
     await query('UPDATE messages SET translation_status = $2 WHERE id = $1', [id, status]);
   }
 
+  /**
+   * Attach an already-known translation (e.g. the AI draft's other-language
+   * counterpart the user chose not to send) by WhatsApp `message_id` rather
+   * than row id. Outbound sends are saved twice — once by the live
+   * `message_create` listener (events.ts) and once by the outbound route
+   * itself — and `save()`'s `ON CONFLICT (message_id) DO NOTHING` means
+   * whichever call loses that race can't set columns via its own INSERT.
+   * Updating by `message_id` afterwards works no matter which call won.
+   */
+  async setKnownTranslation(messageId: string, translatedBody: string): Promise<void> {
+    const { rows } = await query<{ id: string }>(
+      `UPDATE messages
+          SET translated_body = $2, translation_status = 'done'
+        WHERE message_id = $1
+        RETURNING id`,
+      [messageId, translatedBody],
+    );
+    if (rows[0]) await this.broadcastUpdatedById(rows[0].id);
+  }
+
   /** Persist an aggregated ignored-message counter delta (no content). */
   async addIgnored(reason: string, delta: number): Promise<void> {
     await query(

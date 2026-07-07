@@ -51,14 +51,23 @@ outboundRouter.use((_req, res, next) => {
 // then becomes its caption (and may be omitted entirely for an unlabeled send).
 outboundRouter.post('/send', limiter, async (req, res, next) => {
   try {
-    const { number, message, groupId, quotedMessageId, attachment, mentions } = (req.body ?? {}) as {
+    const { number, message, groupId, quotedMessageId, attachment, mentions, knownTranslation } = (req.body ?? {}) as {
       number?: unknown;
       message?: unknown;
       groupId?: unknown;
       quotedMessageId?: unknown;
       attachment?: unknown;
       mentions?: unknown;
+      knownTranslation?: unknown;
     };
+
+    // Optional — the AI-draft compose flow already generated both language
+    // variants; when the user sends one, the other is passed here so it's
+    // persisted as an already-done translation instead of left pending.
+    if (knownTranslation !== undefined && typeof knownTranslation !== 'string') {
+      res.status(400).json({ error: '"knownTranslation" must be a string' });
+      return;
+    }
 
     const hasMessage = typeof message === 'string' && message.trim() !== '';
 
@@ -188,6 +197,15 @@ outboundRouter.post('/send', limiter, async (req, res, next) => {
     await messageService.save(routable).catch((err) =>
       logger.error({ err, messageId: sent.id._serialized }, 'Failed to persist own outbound message'),
     );
+    // Applied by message_id (not folded into the save() above): the live
+    // message_create listener (events.ts) also saves this same outbound echo,
+    // and whichever save() call loses that race can't set columns via INSERT
+    // ... ON CONFLICT DO NOTHING.
+    if (knownTranslation) {
+      await messageService.setKnownTranslation(sent.id._serialized, knownTranslation).catch((err) =>
+        logger.error({ err, messageId: sent.id._serialized }, 'Failed to attach known translation'),
+      );
+    }
 
     res.status(201).json({ data: { messageId: sent.id._serialized } });
   } catch (err) {

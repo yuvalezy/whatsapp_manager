@@ -27,12 +27,16 @@ export function useSendMessage() {
       quotedMessageId?: string;
       attachment?: OutboundAttachment;
       mentions?: string[];
+      /** The AI draft's already-generated counterpart in the other language, if
+       * this send came from the draft-reply flow — persisted as a done
+       * translation instead of left pending. */
+      knownTranslation?: string;
     }
   >({
-    mutationFn: ({ number, message, isGroup, quotedMessageId, attachment, mentions }) =>
+    mutationFn: ({ number, message, isGroup, quotedMessageId, attachment, mentions, knownTranslation }) =>
       isGroup
-        ? api.sendGroupMessage(number, message, quotedMessageId, attachment, mentions)
-        : api.sendMessage(number, message, quotedMessageId, attachment, mentions),
+        ? api.sendGroupMessage(number, message, quotedMessageId, attachment, mentions, knownTranslation)
+        : api.sendMessage(number, message, quotedMessageId, attachment, mentions, knownTranslation),
     onSuccess: (_data, variables) => {
       const normalized = normalizeNumber(variables.number);
       void qc.invalidateQueries({ queryKey: ['messages', 'by-number', normalized] });

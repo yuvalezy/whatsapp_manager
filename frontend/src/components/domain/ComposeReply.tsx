@@ -248,7 +248,12 @@ export function ComposeReply({
     });
   };
 
-  const doSend = (text: string, which: 'english' | 'translated', mentions: string[] = []) => {
+  const doSend = (
+    text: string,
+    which: 'english' | 'translated',
+    mentions: string[] = [],
+    knownTranslation?: string,
+  ) => {
     const messageToSend = text.trim();
     if (!messageToSend && !attachment) return;
     setSendingWhich(which);
@@ -264,6 +269,7 @@ export function ComposeReply({
           ? { data: attachment.data, mimetype: attachment.mimetype, filename: attachment.filename }
           : undefined,
         mentions: mentions.length ? mentions : undefined,
+        knownTranslation,
       },
       {
         onSuccess: () => {
@@ -431,7 +437,7 @@ export function ComposeReply({
               value={translatedDraft}
               onChange={setTranslatedDraft}
               which="translated"
-              onSend={() => doSend(translatedDraft, 'translated')}
+              onSend={() => doSend(translatedDraft, 'translated', [], englishDraft)}
             />
           )}
 

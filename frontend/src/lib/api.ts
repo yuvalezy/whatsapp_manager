@@ -348,10 +348,11 @@ export const api = {
     quotedMessageId?: string,
     attachment?: OutboundAttachment,
     mentions?: string[],
+    knownTranslation?: string,
   ) =>
     request<{ messageId: string }>('/outbound/send', {
       method: 'POST',
-      body: JSON.stringify({ number, message, quotedMessageId, attachment, mentions }),
+      body: JSON.stringify({ number, message, quotedMessageId, attachment, mentions, knownTranslation }),
     }),
   sendGroupMessage: (
     groupId: string,
@@ -359,9 +360,10 @@ export const api = {
     quotedMessageId?: string,
     attachment?: OutboundAttachment,
     mentions?: string[],
+    knownTranslation?: string,
   ) =>
     request<{ messageId: string }>('/outbound/send', {
       method: 'POST',
-      body: JSON.stringify({ groupId, message, quotedMessageId, attachment, mentions }),
+      body: JSON.stringify({ groupId, message, quotedMessageId, attachment, mentions, knownTranslation }),
     }),
 };

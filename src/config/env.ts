@@ -107,6 +107,12 @@ const envSchema = z.object({
   TRANSLATION_MODEL: z.string().default('deepseek-v4-flash'),
   TARGET_LANGUAGE: z.string().default('en'),
 
+  // The account owner's own gender — this is a single-user personal tool, so
+  // it's a fixed setting, not per-contact. Used by draft-reply generation for
+  // first-person grammatical agreement in gendered languages (Spanish,
+  // Hebrew); unset ⇒ the prompt omits any gender guidance for the speaker.
+  OWN_GENDER: z.enum(['male', 'female']).optional(),
+
   // Conversation summaries (OpenAI vision chat model). gpt-4o-mini is cheap and
   // supports vision; override with gpt-4o for higher quality.
   SUMMARY_MODEL: z.string().default('gpt-4o-mini'),
