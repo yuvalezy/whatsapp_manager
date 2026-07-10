@@ -64,6 +64,7 @@ export function MessageBubble({
   const hasTranslation =
     msg.translation_status === 'done' && !!(msg.translated_body || msg.transcript_translated);
   const isEmpty = !hasBody && !hasMediaFile && !hasTranscript;
+  const isDeleted = !!msg.is_deleted;
   const time = new Date(msg.timestamp).toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
@@ -136,6 +137,11 @@ export function MessageBubble({
           </div>
         )}
         <div className="flex items-center justify-end gap-1.5 text-[10.5px] text-fg-muted">
+          {isDeleted && (
+            <span title={msg.deleted_at ? `Deleted ${formatDateTime(msg.deleted_at)}` : undefined}>
+              <StatusPill tone="danger" label={isOutbound ? 'You deleted this' : 'Deleted by sender'} />
+            </span>
+          )}
           {msg.transcription_status === 'pending' && (
             <StatusPill tone="warning" label="Transcribing…" pulse />
           )}

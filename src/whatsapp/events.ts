@@ -9,7 +9,7 @@ import { messageService } from '../messages/message.service';
 import { reactionService } from '../reactions/reaction.service';
 import { MessageRouter } from '../router/message-router';
 import type { RoutableMessage } from '../messages/message.model';
-import { buildRoutable, contactJidOf } from './message-mapper';
+import { buildRoutable, chatIdOf, contactJidOf } from './message-mapper';
 import { isSkippableType } from './message-types';
 import { resolveContactNumber } from './lid-resolver';
 import { normalizeNumber } from '../utils/phone';
@@ -119,18 +119,25 @@ export function registerEvents(
 
   // "Delete for everyone" (revoke). Soft-deletes the stored row via the original
   // message id (from the revoked-message param, falling back to the revoke
-  // stanza's protocolMessageKey). We pass the revoke event's own chat (`message.from`)
-  // so markDeleted can scope by chat_id — the library recovers the revoked id from
-  // a single global `last_message`, so without the chat guard a revoke in one chat
-  // could soft-delete a message in another. markDeleted no-ops on unknown ids, so
-  // revokes in ignored chats have no effect. Note: `message_revoke_me` is deliberately
-  // NOT wired — it is a local-only "delete for me" hide, not a real deletion of
-  // the conversation record, and is_deleted is documented as "delete for everyone".
+  // stanza's protocolMessageKey, then to the event's own message id — the same
+  // cached message object whose `type` flipped to 'revoked', so its id is
+  // normally still the original one). We pass the *direction-aware* chat
+  // (`chatIdOf`, same helper buildRoutable uses to derive the stored chat_id)
+  // so markDeleted can scope by chat_id — the library recovers the revoked id
+  // from a single global `last_message`, so without the chat guard a revoke in
+  // one chat could soft-delete a message in another. Using `message.from`
+  // unconditionally here used to silently drop every revoke of our own sent
+  // messages, since for fromMe messages the chat is `message.to`, not `from`.
+  // markDeleted no-ops on unknown ids, so revokes in ignored chats have no
+  // effect. Note: `message_revoke_me` is deliberately NOT wired — it is a
+  // local-only "delete for me" hide, not a real deletion of the conversation
+  // record, and is_deleted is documented as "delete for everyone".
   client.on('message_revoke_everyone', (message: Message, revoked?: Message | null) => {
-    const revokedId = revoked?.id?._serialized ?? message.protocolMessageKey?._serialized;
+    const revokedId =
+      revoked?.id?._serialized ?? message.protocolMessageKey?._serialized ?? message.id?._serialized;
     if (!revokedId) return;
     messageService
-      .markDeleted(revokedId, new Date(), message.from)
+      .markDeleted(revokedId, new Date(), chatIdOf(message))
       .catch((err) => logger.error({ err }, 'Error marking message deleted'));
   });
 }
@@ -175,7 +182,7 @@ async function handleMessage(
   // The conversation this message belongs to (the group jid for group messages,
   // the other party for 1:1) — direction-aware so our own outbound is keyed to
   // the same thread as inbound.
-  const chatJid = fromMe ? to : from;
+  const chatJid = chatIdOf(message);
   const isGroup = chatJid.endsWith('@g.us');
 
   if (from === 'status@broadcast' || to === 'status@broadcast') {

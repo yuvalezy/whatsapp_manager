@@ -28,6 +28,11 @@ export function contactNumberOf(message: Message): string {
   return normalizeNumber(contactJidOf(message));
 }
 
+/** The chat this message belongs to: fromMe ? recipient : sender (direction-aware). */
+export function chatIdOf(message: Message): string {
+  return (message.id.fromMe ? message.to : message.from) ?? '';
+}
+
 /**
  * `contactNumberOverride` pins the thread key when the caller already knows the
  * real phone number — required whenever the chat is LID-addressed (live
@@ -60,7 +65,7 @@ export async function buildRoutable(
   client?: Client | null,
 ): Promise<RoutableMessage> {
   const fromMe = message.id.fromMe;
-  const chatId = (fromMe ? message.to : message.from) ?? '';
+  const chatId = chatIdOf(message);
   const isGroup = chatId.endsWith('@g.us');
   const contactNumber = contactNumberOverride || contactNumberOf(message);
   const body = message.body ?? '';

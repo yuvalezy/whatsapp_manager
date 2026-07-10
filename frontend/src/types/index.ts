@@ -235,6 +235,12 @@ export interface StoredMessage {
 
   /** @mentions parsed from a group message body, if any. */
   mentions?: MessageMention[] | null;
+
+  /** Set when the sender edited this message in place ("edit message"). */
+  edited_at?: string | null;
+  /** True once the sender revoked this message ("delete for everyone"). Content is retained. */
+  is_deleted?: boolean;
+  deleted_at?: string | null;
 }
 
 export interface CredentialSummary {
