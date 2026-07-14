@@ -170,6 +170,23 @@ outboundRouter.post('/send', limiter, async (req, res, next) => {
           { caption: hasMessage ? String(message) : undefined, ...sendOptions },
         )
       : await client.sendMessage(chatId, String(message), sendOptions);
+
+    // Defense-in-depth: whatsapp-web.js can (after a WA Web build change) return
+    // undefined here even when the message was actually DELIVERED — the SDK just
+    // couldn't retrieve the resulting message model (see the MsgKey._serialized
+    // regressions we patch in Utils.js). Don't 500 a delivered send: the live
+    // `message_create` listener still captures our own outbound echo, so we just
+    // skip the route's own persistence/enrichment and report success. Crashing
+    // here leaves the composer stuck (the frontend flips to its error branch).
+    if (!sent?.id?._serialized) {
+      logger.warn(
+        { to: threadKey, hasMedia: Boolean(media) },
+        'OUTBOUND send returned no message model; delivered but not enriched here (live listener will store it)',
+      );
+      res.status(201).json({ data: { messageId: null } });
+      return;
+    }
+
     logger.warn(
       { to: threadKey, messageId: sent.id._serialized, hasMedia: Boolean(media), mentions: mentionJids.length },
       'OUTBOUND message sent',

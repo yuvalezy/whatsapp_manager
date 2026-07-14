@@ -121,7 +121,13 @@ export function ComposeReply({
   const sendMessage = useSendMessage();
 
   const isEngaged = composeState !== 'idle';
-  const showEditors = composeState === 'preview' || composeState === 'sending';
+  // The AI-draft editor block belongs to the generate→preview→send flow, keyed
+  // by an actual generated draft. A *direct* send (Ctrl+Enter / Send button)
+  // also passes through 'sending' but never populates englishDraft — gating on
+  // that here keeps a plain send from flashing the empty "SEND IN ENGLISH"
+  // editor (which reads as a phantom "generating" step) before it completes.
+  const hasGeneratedDraft = englishDraft.trim() !== '' || translatedDraft.trim() !== '';
+  const showEditors = (composeState === 'preview' || composeState === 'sending') && hasGeneratedDraft;
   const isBusy = composeState === 'generating' || composeState === 'sending';
   const needsTranslation = showEditors && translatedDraft.trim() !== '';
   const targetLangLabel = LANGUAGE_LABELS[targetLanguage] || targetLanguage;

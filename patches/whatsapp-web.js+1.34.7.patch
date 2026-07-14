@@ -1,8 +1,41 @@
 diff --git a/node_modules/whatsapp-web.js/src/util/Injected/Utils.js b/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
-index 540078a..be214ac 100644
+index 540078a..fefb242 100644
 --- a/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
 +++ b/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
-@@ -803,6 +803,38 @@ exports.LoadUtils = () => {
+@@ -580,9 +580,29 @@ exports.LoadUtils = () => {
+ 
+         if (options.waitUntilMsgSent) await sendMsgResultPromise;
+ 
+-        return window
+-            .require('WAWebCollections')
+-            .Msg.get(newMsgKey._serialized);
++        // Newer WA builds' MsgKey no longer exposes `_serialized` as a string
++        // here, so Msg.get(undefined) returned undefined and the just-sent
++        // message couldn't be retrieved — client.sendMessage then resolved to
++        // `undefined` even though the message WAS delivered (same regression as
++        // the getMessageModel patch above, on the send path). Fall back to the
++        // canonical `${fromMe}_${remote}_${id}[_${participant}]` id rebuilt from
++        // the parts we already hold in this scope.
++        let sentKey;
++        try {
++            if (typeof newMsgKey._serialized === 'string') sentKey = newMsgKey._serialized;
++        } catch (e) {
++            /* getter unavailable on this build — fall through to manual */
++        }
++        if (!sentKey) {
++            const remote = chat.id && chat.id._serialized;
++            const part = participant && participant._serialized;
++            if (remote && newId) {
++                sentKey = `true_${remote}_${newId}` + (part ? `_${part}` : '');
++            }
++        }
++        return sentKey
++            ? window.require('WAWebCollections').Msg.get(sentKey)
++            : undefined;
+     };
+ 
+     window.WWebJS.editMessage = async (msg, content, options = {}) => {
+@@ -803,6 +823,38 @@ exports.LoadUtils = () => {
      window.WWebJS.getMessageModel = (message) => {
          const msg = message.serialize();
  
@@ -41,7 +74,7 @@ index 540078a..be214ac 100644
          const { findLinks } = window.require('WALinkify');
  
          msg.isEphemeral = message.isEphemeral;
-@@ -919,10 +951,13 @@ exports.LoadUtils = () => {
+@@ -919,10 +971,13 @@ exports.LoadUtils = () => {
  
      window.WWebJS.getChats = async () => {
          const chats = window.require('WAWebCollections').Chat.getModelsArray();
@@ -57,7 +90,7 @@ index 540078a..be214ac 100644
      };
  
      window.WWebJS.getChannels = async () => {
-@@ -951,20 +986,32 @@ exports.LoadUtils = () => {
+@@ -951,20 +1006,32 @@ exports.LoadUtils = () => {
  
          if (chat.groupMetadata) {
              model.isGroup = true;
@@ -103,7 +136,7 @@ index 540078a..be214ac 100644
          }
  
          if (chat.newsletterMetadata) {
-@@ -980,22 +1027,30 @@ exports.LoadUtils = () => {
+@@ -980,22 +1047,30 @@ exports.LoadUtils = () => {
          }
  
          model.lastMessage = null;
