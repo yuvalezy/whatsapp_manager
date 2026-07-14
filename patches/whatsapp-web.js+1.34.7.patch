@@ -1,0 +1,151 @@
+diff --git a/node_modules/whatsapp-web.js/src/util/Injected/Utils.js b/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
+index 540078a..be214ac 100644
+--- a/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
++++ b/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
+@@ -803,6 +803,38 @@ exports.LoadUtils = () => {
+     window.WWebJS.getMessageModel = (message) => {
+         const msg = message.serialize();
+ 
++        // Newer WA builds' MsgKey.serialize() no longer emits the precomputed
++        // `_serialized` string (it's a getter on the live key), so downstream
++        // code that reads `message.id._serialized` gets undefined and every
++        // stored row would have a null message_id. Restore it from the live key
++        // (preferred — uses WA's own logic), falling back to reconstructing the
++        // canonical `${fromMe}_${remote}_${id}[_${participant}]` form.
++        if (msg.id && typeof msg.id._serialized !== 'string') {
++            let serialized;
++            try {
++                if (message.id && typeof message.id._serialized === 'string') {
++                    serialized = message.id._serialized;
++                }
++            } catch (e) {
++                /* getter unavailable on this build — fall through to manual */
++            }
++            if (!serialized) {
++                const k = msg.id;
++                const unwrap = (v) =>
++                    v && typeof v === 'object' ? v._serialized || v.user || undefined : v;
++                const remote = unwrap(k.remote);
++                const participant = unwrap(k.participant);
++                if (remote && k.id) {
++                    serialized =
++                        `${k.fromMe ? 'true' : 'false'}_${remote}_${k.id}` +
++                        (participant ? `_${participant}` : '');
++                }
++            }
++            if (serialized) {
++                msg.id = Object.assign({}, msg.id, { _serialized: serialized });
++            }
++        }
++
+         const { findLinks } = window.require('WALinkify');
+ 
+         msg.isEphemeral = message.isEphemeral;
+@@ -919,10 +951,13 @@ exports.LoadUtils = () => {
+ 
+     window.WWebJS.getChats = async () => {
+         const chats = window.require('WAWebCollections').Chat.getModelsArray();
++        // Resilient per-chat: one chat that fails to serialize (e.g. a group
++        // whose metadata block hits a renamed WA module on a newer build) must
++        // not reject the whole list. Skip the offender instead.
+         const chatPromises = chats.map((chat) =>
+-            window.WWebJS.getChatModel(chat),
++            window.WWebJS.getChatModel(chat).catch(() => null),
+         );
+-        return await Promise.all(chatPromises);
++        return (await Promise.all(chatPromises)).filter((c) => c);
+     };
+ 
+     window.WWebJS.getChannels = async () => {
+@@ -951,20 +986,32 @@ exports.LoadUtils = () => {
+ 
+         if (chat.groupMetadata) {
+             model.isGroup = true;
+-            const chatWid = window
+-                .require('WAWebWidFactory')
+-                .createWid(chat.id._serialized);
+-            const groupMetadata =
+-                window.require('WAWebCollections').GroupMetadata ||
+-                window.require('WAWebCollections').WAWebGroupMetadataCollection;
+-            await groupMetadata.update(chatWid);
+-            const { toPn } = window.require('WAWebLidMigrationUtils');
+-            const serializedMetadata = chat.groupMetadata.serialize();
+-            for (const p of serializedMetadata.participants || []) {
+-                p.id = toPn(p.id) ?? p.id;
++            // Group metadata enrichment is best-effort: newer WA builds rename
++            // the modules used here (WAWebLidMigrationUtils / the metadata
++            // collection), which used to throw and drop the whole chat. Keep the
++            // core chat model (id/name/isGroup/isMuted) even if enrichment fails.
++            try {
++                const chatWid = window
++                    .require('WAWebWidFactory')
++                    .createWid(chat.id._serialized);
++                const groupMetadata =
++                    window.require('WAWebCollections').GroupMetadata ||
++                    window.require('WAWebCollections').WAWebGroupMetadataCollection;
++                await groupMetadata.update(chatWid);
++                const serializedMetadata = chat.groupMetadata.serialize();
++                try {
++                    const { toPn } = window.require('WAWebLidMigrationUtils');
++                    for (const p of serializedMetadata.participants || []) {
++                        p.id = toPn(p.id) ?? p.id;
++                    }
++                } catch (e) {
++                    /* LID→PN migration util unavailable on this build; keep raw ids */
++                }
++                model.groupMetadata = serializedMetadata;
++                model.isReadOnly = chat.groupMetadata.announce;
++            } catch (e) {
++                /* metadata enrichment failed — degrade to a bare group model */
+             }
+-            model.groupMetadata = serializedMetadata;
+-            model.isReadOnly = chat.groupMetadata.announce;
+         }
+ 
+         if (chat.newsletterMetadata) {
+@@ -980,22 +1027,30 @@ exports.LoadUtils = () => {
+         }
+ 
+         model.lastMessage = null;
+-        if (model.msgs && model.msgs.length) {
+-            const lastMessage = chat.lastReceivedKey
+-                ? window
+-                      .require('WAWebCollections')
+-                      .Msg.get(chat.lastReceivedKey._serialized) ||
+-                  (
+-                      await window
++        // Best-effort: serializing the chat's last message must not sink the
++        // whole chat lookup (getChatById/getChats). Newer WA builds can throw
++        // inside message serialization; a chat without a lastMessage preview is
++        // still fully usable for our purposes.
++        try {
++            if (model.msgs && model.msgs.length) {
++                const lastMessage = chat.lastReceivedKey
++                    ? window
+                           .require('WAWebCollections')
+-                          .Msg.getMessagesById([
+-                              chat.lastReceivedKey._serialized,
+-                          ])
+-                  )?.messages?.[0]
+-                : null;
+-            lastMessage &&
+-                (model.lastMessage =
+-                    window.WWebJS.getMessageModel(lastMessage));
++                          .Msg.get(chat.lastReceivedKey._serialized) ||
++                      (
++                          await window
++                              .require('WAWebCollections')
++                              .Msg.getMessagesById([
++                                  chat.lastReceivedKey._serialized,
++                              ])
++                      )?.messages?.[0]
++                    : null;
++                lastMessage &&
++                    (model.lastMessage =
++                        window.WWebJS.getMessageModel(lastMessage));
++            }
++        } catch (e) {
++            /* last-message preview unavailable — leave null */
+         }
+ 
+         delete model.msgs;
