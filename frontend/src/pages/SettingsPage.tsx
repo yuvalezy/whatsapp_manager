@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
+import { Combobox, type ComboboxSection } from '@/components/ui/Combobox';
 import { Switch } from '@/components/ui/Switch';
 import { CodeInline } from '@/components/ui/CodeInline';
 import { StatusPill } from '@/components/ui/StatusPill';
@@ -247,16 +248,34 @@ function BackfillTab() {
 
   // Values are prefixed so a group id can never collide with a phone number:
   // 'all' = everything, 'c:<number>' = one contact, 'g:<groupId>' = one group.
-  const options = [
-    { value: 'all', label: 'All contacts & groups' },
-    ...(whitelist ?? []).map((w) => ({
-      value: `c:${w.phone_number}`,
-      label: w.label ? `${w.label} · ${formatPhone(w.phone_number)}` : formatPhone(w.phone_number),
-    })),
-    ...(groups ?? []).map((g) => ({
-      value: `g:${g.group_id}`,
-      label: `Group · ${g.subject || g.group_id}`,
-    })),
+  // Grouped into sections (General / Contacts / Groups); each section is sorted
+  // alphabetically so the Combobox stays navigable + searchable as it grows.
+  const sections: ComboboxSection[] = [
+    {
+      label: 'General',
+      options: [{ value: 'all', label: 'All contacts & groups', icon: 'refreshCw' }],
+    },
+    {
+      label: `Contacts${whitelist ? ` (${whitelist.length})` : ''}`,
+      options: (whitelist ?? [])
+        .map((w) => ({
+          value: `c:${w.phone_number}`,
+          label: w.label || formatPhone(w.phone_number),
+          hint: w.label ? formatPhone(w.phone_number) : undefined,
+          icon: 'user' as const,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    },
+    {
+      label: `Groups${groups ? ` (${groups.length})` : ''}`,
+      options: (groups ?? [])
+        .map((g) => ({
+          value: `g:${g.group_id}`,
+          label: g.subject || g.group_id,
+          icon: 'users' as const,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    },
   ];
 
   const run = () => {
@@ -284,11 +303,12 @@ function BackfillTab() {
       <div className="flex flex-col gap-3 rounded-wm-card border border-line-strong bg-surface p-5">
         <span className={EYEBROW}>Pull conversation history</span>
         <div className="flex flex-wrap items-end gap-3">
-          <Select
+          <Combobox
             label="Target"
             value={target}
-            options={options}
+            sections={sections}
             onChange={setTarget}
+            placeholder="Select a target…"
             className="w-[280px]"
           />
           <Input label="From" type="date" value={from} onChange={setFrom} className="w-[170px]" />
