@@ -96,11 +96,14 @@ Any write returns `403 { "error": "API key is read-only" }`.
 
 | ✅ Allowed (GET) | 🚫 Blocked (non-GET) |
 | --- | --- |
-| List/read messages, threads, search | Send outbound (`POST /outbound/send`) |
+| List/read messages, threads, search | Send outbound (`POST /outbound/send`) † |
 | Export a thread, fetch media | Add/remove whitelist or groups |
-| Costs, stats, status, QR | Trigger backfill |
-| `GET /events` (SSE stream) | Add/delete credentials |
-| | Translate / summarize / draft-reply (they're `POST`) |
+| Costs, stats, status, QR | Trigger backfill (`POST /backfill`) † |
+| `GET /backfill/status` | Add/delete credentials |
+| `GET /events` (SSE stream) | Summarize (`POST /messages/:id/summarize`) † |
+| | Translate / draft-reply (they're `POST`) |
+
+† Allowed for the **scoped outbound key** below — never for this key.
 
 ```bash
 # Read — 200
@@ -111,9 +114,44 @@ curl -X POST http://localhost:3000/whitelist -H 'x-api-key: <key>' \
   -H 'Content-Type: application/json' -d '{"number":"+1..."}'
 ```
 
-> Need the agent to hit a specific write endpoint later (e.g. on-demand
-> translate)? That's a small allow-list tweak to the guard's read-only rule —
-> it's deliberately GET-only for now.
+## Scoped outbound key
+
+```dotenv
+OUTBOUND_API_KEY=<a second long random string, different from API_KEY>
+```
+
+The credential the agent orchestrator holds for the few writes it must initiate.
+It is **not** a general write key and **not** a read key — it unlocks an exact
+allow-list of `POST` shapes and nothing else:
+
+| ✅ Allowed (POST only) | Why |
+| --- | --- |
+| `POST /outbound/send` | The agent sends a WhatsApp reply |
+| `POST /messages/:id/summarize` | Muted-group @-mention summary |
+| `POST /backfill`, `/backfill/:number`, `/backfill/group/:groupId` | Pull chat history at customer onboarding |
+
+Everything else — any other path, and **every** `GET` — falls through to the
+rules above, so this key alone returns `401` on a read. The orchestrator holds
+both: `API_KEY` for reads (incl. polling `GET /backfill/status`) and
+`OUTBOUND_API_KEY` for these writes.
+
+Backfill is on the list because it only pulls **this account's own** chat history
+into this database through the same pipeline as live ingestion — it sends
+nothing and changes no configuration. Whitelist, groups, and credentials stay
+`403` for this key.
+
+```bash
+# Trigger a full backfill — 202 Accepted (409 if one is already running,
+# 503 if WhatsApp isn't READY), then poll status with the READ key.
+curl -X POST http://localhost:3000/backfill -H 'x-api-key: <OUTBOUND_API_KEY>' \
+  -H 'Content-Type: application/json' -d '{"since":"2026-01-01T00:00:00Z"}'
+curl http://localhost:3000/backfill/status -H 'x-api-key: <API_KEY>'
+```
+
+> Need the agent to hit another write endpoint later (e.g. on-demand translate)?
+> That's a small tweak to the `scopedWriteAllowed` allow-list in
+> [`auth.middleware.ts`](../src/auth/auth.middleware.ts) — keep it to exact
+> path shapes so this key never widens into a general write key.
 
 ## Query-param credentials (media / export / SSE)
 

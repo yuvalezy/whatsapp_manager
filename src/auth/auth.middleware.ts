@@ -7,7 +7,10 @@ import { isAuthConfigured, verify } from './jwt';
  * The single app-wide guard. Three credentials, three capability levels:
  *   • personal JWT   (Authorization: Bearer <jwt>  /  ?access_token=)  → full access
  *   • external key   (x-api-key: <key>             /  ?api_key=)       → read-only (GET)
- *   • outbound key   (x-api-key: <OUTBOUND_API_KEY>)                   → POST /outbound/send ONLY
+ *   • outbound key   (x-api-key: <OUTBOUND_API_KEY>)                   → a scoped POST
+ *       allowlist ONLY: /outbound/send, /messages/:id/summarize, /backfill[/...].
+ *       Not a general write key, and not a read key either — reads (incl.
+ *       GET /backfill/status) go through the external key above.
  *
  * The query-param variants exist because element/navigation/SSE requests
  * (<img>, <audio>, <a download>, EventSource) can't set headers.
@@ -79,14 +82,24 @@ export function authGuard(req: Request, res: Response, next: NextFunction): void
   const key = apiKey(req);
 
   // 2) Scoped OUTBOUND key → write access to a small allowlist of orchestrator-
-  //    initiated writes ONLY: POST /outbound/send and POST /messages/:id/summarize
-  //    (the agent's muted-group @-mention summary). Checked before the general key
-  //    so the read-only wall never blocks the orchestrator. Cheap method/path
-  //    checks gate the constant-time compare.
+  //    initiated writes ONLY: POST /outbound/send, POST /messages/:id/summarize
+  //    (the agent's muted-group @-mention summary), and POST /backfill[/...]
+  //    (the orchestrator's history pull at customer onboarding — the whole
+  //    /backfill router: all-contacts, /:number and /group/:groupId). Checked
+  //    before the general key so the read-only wall never blocks the
+  //    orchestrator. Cheap method/path checks gate the constant-time compare.
+  //
+  //    Backfill is scoped-safe: it only pulls the caller's OWN chat history into
+  //    this DB via the same pipeline as live ingestion — it sends nothing and
+  //    mutates no config. Deliberately still an allowlist of exact shapes: this
+  //    key must never become a general write key (whitelist/groups/credentials
+  //    stay 403).
   const outboundKey = env.OUTBOUND_API_KEY;
   const scopedWriteAllowed =
     req.method === 'POST' &&
-    (req.path === '/outbound/send' || /^\/messages\/\d+\/summarize$/.test(req.path));
+    (req.path === '/outbound/send' ||
+      /^\/messages\/\d+\/summarize$/.test(req.path) ||
+      /^\/backfill(\/.*)?$/.test(req.path));
   if (
     key &&
     outboundKey &&
