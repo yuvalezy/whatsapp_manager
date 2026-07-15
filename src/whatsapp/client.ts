@@ -2,6 +2,7 @@ import { Client, LocalAuth } from 'whatsapp-web.js';
 import { env, waWebRemotePath } from '../config/env';
 import { logger } from '../logger';
 import { registerEvents } from './events';
+import { reclaimSessionLock } from './session-lock';
 import { messageRouter } from '../router/message-router';
 import { normalizeNumber } from '../utils/phone';
 
@@ -100,6 +101,10 @@ class WhatsAppService {
    * server (and /qr) stays reachable throughout login.
    */
   async initialize(): Promise<void> {
+    // A previous run's browser can outlive its Node process and keep holding the
+    // profile, which makes this launch fail (and look like a broken login).
+    await reclaimSessionLock();
+
     this.client = new Client({
       authStrategy: new LocalAuth({
         clientId: env.WHATSAPP_CLIENT_ID,

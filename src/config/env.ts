@@ -39,7 +39,7 @@ const envSchema = z.object({
   // rejects at link time ("Couldn't link device, try again later"). We load a
   // current build from wppconnect/wa-version instead. Bump WA_WEB_VERSION when
   // it eventually goes stale, or set WA_WEB_VERSION_REMOTE_PATH to a full URL.
-  WA_WEB_VERSION: z.string().default('2.3000.1043132952-alpha'),
+  WA_WEB_VERSION: z.string().default('2.3000.1043159177-alpha'),
   WA_WEB_VERSION_REMOTE_PATH: z.string().optional(),
 
   // Safety
