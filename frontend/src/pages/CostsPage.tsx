@@ -23,7 +23,12 @@ function providerAmount(rows: { provider: CostProvider; cost_usd: number }[] | u
 }
 
 export function CostsPage() {
-  const { data: summary, isLoading: summaryLoading } = useCostSummary();
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    isError: summaryError,
+    refetch: refetchSummary,
+  } = useCostSummary();
   const { data: daily, isLoading: dailyLoading, isError: dailyError, refetch: refetchDaily } = useDailyCosts(30);
   const {
     data: recent,
@@ -33,6 +38,12 @@ export function CostsPage() {
   } = useRecentCosts(100);
 
   const dailyRows = buildDailyRows(daily ?? []);
+
+  // On a summary fetch error, reserve the KPIs for an unavailable state rather
+  // than formatting undefined as $0.00 (which reads as "no spend"). A
+  // successful response containing zero still formats as $0.00.
+  const summaryUnavailable = summaryError;
+  const summaryValue = (n: number | undefined) => (summaryUnavailable ? '—' : formatUsd(n));
 
   const dailyColumns: TableColumn<(typeof dailyRows)[number]>[] = [
     { key: 'day', label: 'Day' },
@@ -72,30 +83,42 @@ export function CostsPage() {
       />
       <div className="flex flex-col gap-5 p-7">
         <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]">
-          <StatCard
-            label="This month"
-            value={formatUsd(summary?.monthlyTotal)}
-            icon="dollarSign"
-            loading={summaryLoading}
-          />
-          <StatCard
-            label="OpenAI · this month"
-            value={formatUsd(providerAmount(summary?.monthlyByProvider, 'openai'))}
-            icon="mic"
-            loading={summaryLoading}
-          />
-          <StatCard
-            label="DeepSeek · this month"
-            value={formatUsd(providerAmount(summary?.monthlyByProvider, 'deepseek'))}
-            icon="languages"
-            loading={summaryLoading}
-          />
-          <StatCard
-            label="All-time total"
-            value={formatUsd(summary?.allTimeTotal)}
-            icon="activity"
-            loading={summaryLoading}
-          />
+          {summaryError ? (
+            <div className="[grid-column:1/-1]">
+              <ErrorState
+                title="Couldn't load cost summary"
+                description="The spend summary failed to load."
+                onRetry={() => void refetchSummary()}
+              />
+            </div>
+          ) : (
+            <>
+              <StatCard
+                label="This month"
+                value={summaryValue(summary?.monthlyTotal)}
+                icon="dollarSign"
+                loading={summaryLoading}
+              />
+              <StatCard
+                label="OpenAI · this month"
+                value={summaryValue(providerAmount(summary?.monthlyByProvider, 'openai'))}
+                icon="mic"
+                loading={summaryLoading}
+              />
+              <StatCard
+                label="DeepSeek · this month"
+                value={summaryValue(providerAmount(summary?.monthlyByProvider, 'deepseek'))}
+                icon="languages"
+                loading={summaryLoading}
+              />
+              <StatCard
+                label="All-time total"
+                value={summaryValue(summary?.allTimeTotal)}
+                icon="activity"
+                loading={summaryLoading}
+              />
+            </>
+          )}
         </div>
 
         <span className="text-xs text-fg-muted">
@@ -104,7 +127,7 @@ export function CostsPage() {
         </span>
 
         <div className="flex flex-col gap-2.5">
-          <span className="text-[15px] font-bold text-fg">Last 30 days</span>
+          <h2 className="text-[15px] font-bold text-fg">Last 30 days</h2>
           {dailyError ? (
             <ErrorState
               title="Couldn't load daily costs"
@@ -121,7 +144,7 @@ export function CostsPage() {
         </div>
 
         <div className="flex flex-col gap-2.5">
-          <span className="text-[15px] font-bold text-fg">Recent calls</span>
+          <h2 className="text-[15px] font-bold text-fg">Recent calls</h2>
           {recentError ? (
             <ErrorState
               title="Couldn't load recent calls"

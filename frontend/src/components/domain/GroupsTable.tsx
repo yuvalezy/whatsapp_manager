@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
 import { IconButton } from '@/components/ui/IconButton';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
@@ -21,6 +23,9 @@ import type { GroupEntry } from '@/types';
 export interface GroupsTableProps {
   rows?: GroupEntry[];
   loading?: boolean;
+  /** A fetch error message. When set, an error state is shown instead of the table. */
+  error?: ReactNode;
+  onRetry?: () => void;
   deletingId?: string | number | null;
   onDelete?: (groupId: string) => void;
   onLink?: (row: GroupEntry) => void;
@@ -43,7 +48,7 @@ function sortValue(row: GroupEntry, key: GroupsSortKey): string {
   }
 }
 
-export function GroupsTable({ rows = [], loading = false, deletingId, onDelete, onLink, className }: GroupsTableProps) {
+export function GroupsTable({ rows = [], loading = false, error, onRetry, deletingId, onDelete, onLink, className }: GroupsTableProps) {
   const [pending, setPending] = useState<GroupEntry | null>(null);
   const [search, setSearch] = useState('');
   const { sortKey, sortDir, toggleSort } = useSortState<GroupsSortKey>();
@@ -64,6 +69,18 @@ export function GroupsTable({ rows = [], loading = false, deletingId, onDelete, 
       <div className={cn('flex flex-col gap-2', className)}>
         <Skeleton width="100%" height="46px" />
         <Skeleton width="100%" height="46px" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={cn('rounded-wm-card border border-line-strong bg-surface', className)}>
+        <ErrorState
+          title="Couldn't load groups"
+          description={error}
+          onRetry={onRetry}
+        />
       </div>
     );
   }

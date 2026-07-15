@@ -34,7 +34,7 @@ export function DashboardPage() {
     isLoading: countLoading,
     isError: countError,
   } = useMessageCount();
-  const { data: costSummary, isLoading: costLoading } = useCostSummary();
+  const { data: costSummary, isLoading: costLoading, isError: costError } = useCostSummary();
   const navigate = useNavigate();
   const [selected, setSelected] = useState<StoredMessage | null>(null);
   const [open, setOpen] = useState(false);
@@ -70,9 +70,9 @@ export function DashboardPage() {
           />
           <StatCard
             label="API cost this month"
-            value={formatUsd(costSummary?.monthlyTotal)}
+            value={costError ? '—' : formatUsd(costSummary?.monthlyTotal)}
             icon="dollarSign"
-            loading={costLoading}
+            loading={costLoading && !costError}
           />
         </div>
 
@@ -85,7 +85,7 @@ export function DashboardPage() {
         <div className="flex flex-col gap-3.5 rounded-wm-card border border-line-strong bg-surface p-[18px] shadow-wm-card">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-[15px] font-bold text-fg">Recent messages</div>
+              <h2 className="text-[15px] font-bold text-fg">Recent messages</h2>
               <div className="mt-0.5 text-[12.5px] text-fg-secondary">
                 Latest inbound captures from whitelisted numbers
               </div>

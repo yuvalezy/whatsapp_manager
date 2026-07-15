@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { backfillService } from './backfill.service';
+import { parseDateWindow } from './date-window';
 import { whatsappService } from '../whatsapp/client';
 import { groupService } from '../groups/group.service';
 
@@ -18,28 +19,19 @@ const bodySchema = z.object({
   until: dateVal,
 });
 
-/** ISO-8601 / epoch-ms → epoch ms. Returns NaN on invalid, undefined when absent. */
-function toEpoch(v: string | number | undefined): number | undefined {
-  if (v === undefined) return undefined;
-  if (typeof v === 'number') return v;
-  if (/^\d+$/.test(v)) return Number(v);
-  return Date.parse(v);
-}
-
 function runBackfill(req: Request, res: Response, target: { number?: string; groupId?: string } = {}): void {
   const parsed = bodySchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid request body' });
     return;
   }
-  const since = toEpoch(parsed.data.from ?? parsed.data.since);
-  const until = toEpoch(parsed.data.to ?? parsed.data.until);
-  if (since !== undefined && Number.isNaN(since)) {
-    res.status(400).json({ error: 'Invalid "from" date' });
-    return;
-  }
-  if (until !== undefined && Number.isNaN(until)) {
-    res.status(400).json({ error: 'Invalid "to" date' });
+  // The API is the authoritative guard for the date window (see date-window.ts):
+  // it expands date-only bounds to UTC calendar-day boundaries and rejects
+  // inverted ranges. The UI mirrors this for inline feedback, but the backend
+  // decision is final.
+  const window = parseDateWindow(parsed.data);
+  if (!window.ok) {
+    res.status(400).json({ error: window.error });
     return;
   }
   if (whatsappService.getState() !== 'READY') {
@@ -51,7 +43,7 @@ function runBackfill(req: Request, res: Response, target: { number?: string; gro
     return;
   }
 
-  backfillService.start({ ...target, since, until });
+  backfillService.start({ ...target, ...window.window });
   res.status(202).json({ data: backfillService.getStatus() });
 }
 

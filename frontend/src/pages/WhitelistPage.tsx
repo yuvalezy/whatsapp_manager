@@ -29,7 +29,7 @@ import { ApiError } from '@/lib/api';
 import type { GroupEntry, WhitelistEntry } from '@/types';
 
 export function WhitelistPage() {
-  const { data: whitelist, isLoading } = useWhitelist();
+  const { data: whitelist, isLoading, isError, error, refetch } = useWhitelist();
   const add = useAddWhitelist();
   const remove = useRemoveWhitelist();
   const update = useUpdateWhitelist();
@@ -44,7 +44,13 @@ export function WhitelistPage() {
   const setEzyLink = useSetWhitelistEzyLink();
 
   // Groups
-  const { data: groups, isLoading: groupsLoading } = useGroups();
+  const {
+    data: groups,
+    isLoading: groupsLoading,
+    isError: groupsError,
+    error: groupsErr,
+    refetch: refetchGroups,
+  } = useGroups();
   const [groupPickerOpen, setGroupPickerOpen] = useState(false);
   const availableGroups = useAvailableGroups(groupPickerOpen);
   const addGroups = useAddGroupsBulk();
@@ -91,6 +97,8 @@ export function WhitelistPage() {
         <WhitelistTable
           rows={whitelist ?? []}
           loading={isLoading}
+          error={isError ? (error instanceof ApiError ? error.message : 'The whitelist failed to load. Please try again.') : null}
+          onRetry={() => void refetch()}
           deletingId={removingId}
           onDelete={(id) => {
             const row = (whitelist ?? []).find((r) => r.id === id);
@@ -134,6 +142,8 @@ export function WhitelistPage() {
           <GroupsTable
             rows={groups ?? []}
             loading={groupsLoading}
+            error={groupsError ? (groupsErr instanceof ApiError ? groupsErr.message : 'Monitored groups failed to load. Please try again.') : null}
+            onRetry={() => void refetchGroups()}
             deletingId={removingGroupId}
             onDelete={(groupId) => {
               setRemovingGroupId(groupId);

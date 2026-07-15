@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { NAV_ITEMS, activeKeyForPath } from './nav';
 import { useSse } from '@/hooks/useSse';
+import { useStatus } from '@/hooks/useStatus';
 import { useThreads } from '@/hooks/useThreads';
 
 // ============================================================================
@@ -21,6 +22,7 @@ export function AppLayout() {
   useSse();
 
   const { data: threads } = useThreads();
+  const { data: status } = useStatus();
   const unreadTotal = (threads ?? []).reduce((sum, t) => sum + (t.unread ?? 0), 0);
 
   const handleNavigate = (key: string) => {
@@ -36,6 +38,7 @@ export function AppLayout() {
         onNavigate={handleNavigate}
         onToggleCollapse={() => setCollapsed((c) => !c)}
         badges={{ conversations: unreadTotal }}
+        outboundEnabled={status?.outboundEnabled}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />

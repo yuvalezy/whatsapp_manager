@@ -42,7 +42,7 @@ export function TopBar({ showMenuButton = false, onMenuClick, className }: TopBa
       )}
       <div className="flex-1" />
       <ConnectionStatusBadge state={state} />
-      <Switch checked={isLight} onChange={toggleTheme} />
+      <Switch checked={isLight} onChange={toggleTheme} ariaLabel="Light mode" />
       <Icon name={theme === 'light' ? 'sun' : 'moon'} size={16} className="text-fg-muted" />
       <div className="h-[22px] w-px bg-line" />
       <Avatar personName={accountName} size="sm" />

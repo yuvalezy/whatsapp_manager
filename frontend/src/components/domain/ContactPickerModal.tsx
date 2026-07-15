@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
-import { Checkbox } from '@/components/ui/Checkbox';
+import { CheckboxMark } from '@/components/ui/Checkbox';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -131,11 +131,13 @@ export function ContactPickerModal({
               >
                 <button
                   type="button"
+                  aria-pressed={isSelected}
+                  aria-label={`${c.name}${isSelected ? ', selected' : ''}`}
                   disabled={c.whitelisted}
                   onClick={() => toggle(c.number)}
                   className={cn('flex min-w-0 flex-1 items-center gap-3', c.whitelisted ? 'cursor-default' : 'cursor-pointer')}
                 >
-                  <Checkbox checked={c.whitelisted || isSelected} disabled={c.whitelisted} />
+                  <CheckboxMark checked={c.whitelisted || isSelected} />
                   <Avatar personName={c.name} size="sm" />
                   <div className="flex min-w-0 flex-1 flex-col items-start">
                     <span className="truncate text-[13.5px] font-medium text-fg">{c.name}</span>

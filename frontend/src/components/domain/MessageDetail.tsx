@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
@@ -7,6 +7,7 @@ import { StatusPill } from '@/components/ui/StatusPill';
 import { IconButton } from '@/components/ui/IconButton';
 import { CodeInline } from '@/components/ui/CodeInline';
 import { CopyButton } from '@/components/ui/CopyButton';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { PhoneNumber } from './PhoneNumber';
 import { RelativeTime } from './RelativeTime';
 import { MessageTypeBadge } from './MessageTypeBadge';
@@ -32,18 +33,18 @@ const EYEBROW = 'text-[11px] font-bold uppercase tracking-[0.04em] text-fg-secon
 export function MessageDetail({ open, message, onClose }: MessageDetailProps) {
   const translate = useTranslateMessage();
   const { toast } = useToast();
+  const drawerRef = useRef<HTMLDivElement>(null);
+  // Focus trap: initial focus, Tab containment, Escape, focus restoration.
+  useFocusTrap({ containerRef: drawerRef, active: open, onEscape: onClose });
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose?.();
-    document.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
-      document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -110,8 +111,11 @@ export function MessageDetail({ open, message, onClose }: MessageDetailProps) {
       onClick={() => onClose?.()}
     >
       <div
+        ref={drawerRef}
         role="dialog"
         aria-modal="true"
+        aria-label="Message details"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className="flex h-full w-[420px] max-w-full flex-col gap-[18px] overflow-auto border-l border-line-strong bg-surface p-[22px] shadow-wm-pop animate-wm-slide-in"
       >

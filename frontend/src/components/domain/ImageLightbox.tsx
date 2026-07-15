@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '@/components/ui/Icon';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 // ============================================================================
 // ImageLightbox — full-screen overlay for viewing a chat image at full size.
@@ -15,21 +16,22 @@ export interface ImageLightboxProps {
 }
 
 export function ImageLightbox({ url, alt = 'attachment', onClose }: ImageLightboxProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  // The lightbox is always mounted-while-open, so the trap is always active.
+  useFocusTrap({ containerRef, active: true, onEscape: onClose });
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
-      document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [onClose]);
+  }, []);
 
   return createPortal(
     <div
+      ref={containerRef}
+      tabIndex={-1}
       className="fixed inset-0 z-[1000] flex items-center justify-center bg-[rgba(6,10,8,0.85)] p-4 backdrop-blur-[2px] animate-wm-fade-in"
       onClick={onClose}
       role="dialog"

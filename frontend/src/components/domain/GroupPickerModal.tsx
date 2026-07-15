@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
-import { Checkbox } from '@/components/ui/Checkbox';
+import { CheckboxMark } from '@/components/ui/Checkbox';
 import { Icon } from '@/components/ui/Icon';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -104,10 +104,14 @@ export function GroupPickerModal({
           <div className="py-6 text-center text-[13px] text-fg-muted">No groups match "{search}".</div>
         ) : (
           <div className="flex max-h-[380px] flex-col gap-1 overflow-y-auto">
-            {filtered.map((g) => (
+            {filtered.map((g) => {
+              const isSelected = selected.has(g.groupId);
+              return (
               <button
                 key={g.groupId}
                 type="button"
+                aria-pressed={isSelected}
+                aria-label={`${g.subject}${isSelected ? ', selected' : ''}`}
                 disabled={g.monitored}
                 onClick={() => toggle(g.groupId)}
                 className={cn(
@@ -115,7 +119,7 @@ export function GroupPickerModal({
                   g.monitored ? 'cursor-default opacity-50' : 'cursor-pointer hover:border-line-strong hover:bg-surface-2',
                 )}
               >
-                <Checkbox checked={g.monitored || selected.has(g.groupId)} disabled={g.monitored} />
+                <CheckboxMark checked={g.monitored || isSelected} />
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-fg-muted">
                   <Icon name="users" size={16} />
                 </span>
@@ -128,7 +132,8 @@ export function GroupPickerModal({
                   g.lastActivity && <RelativeTime timestamp={g.lastActivity} fontSize="11px" />
                 )}
               </button>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

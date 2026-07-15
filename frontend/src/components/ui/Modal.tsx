@@ -1,9 +1,10 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/cn';
 import { Icon, type IconName } from './Icon';
 import { IconButton } from './IconButton';
 import { Button, type ButtonVariant } from './Button';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 // ============================================================================
 // Modal — centered dialog with backdrop. Generic title/description/icon +
@@ -65,19 +66,19 @@ export function Modal({
   onSecondary,
   onClose,
 }: ModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Focus trap: initial focus, Tab containment, Escape, and focus restoration
+  // on close (see useFocusTrap). Scroll-lock stays in its own effect below.
+  useFocusTrap({ containerRef: dialogRef, active: open, onEscape: onClose });
+
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose?.();
-    };
-    document.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
-      document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -89,9 +90,11 @@ export function Modal({
       onClick={() => onClose?.()}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={typeof title === 'string' ? title : undefined}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className={cn(
           'flex max-w-[calc(100vw-32px)] flex-col gap-[14px] rounded-[18px] border border-line-strong bg-surface p-[22px] shadow-wm-pop animate-wm-scale-in',

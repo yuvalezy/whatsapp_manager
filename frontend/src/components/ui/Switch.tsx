@@ -10,11 +10,13 @@ export interface SwitchProps {
   checked?: boolean;
   disabled?: boolean;
   label?: ReactNode;
+  /** Accessible name when no visible `label` is rendered (icon-only switches). */
+  ariaLabel?: string;
   onChange?: (checked: boolean) => void;
   className?: string;
 }
 
-export function Switch({ checked = false, disabled = false, label, onChange, className }: SwitchProps) {
+export function Switch({ checked = false, disabled = false, label, ariaLabel, onChange, className }: SwitchProps) {
   return (
     <label
       className={cn(
@@ -27,6 +29,7 @@ export function Switch({ checked = false, disabled = false, label, onChange, cla
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => !disabled && onChange?.(!checked)}
         className={cn(

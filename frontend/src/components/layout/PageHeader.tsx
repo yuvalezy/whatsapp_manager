@@ -27,7 +27,7 @@ export function PageHeader({ title, subtitle, badgeLabel, badgeTone = 'neutral',
     >
       <div>
         <div className="flex flex-wrap items-center gap-2.5">
-          <span className="text-[22px] font-extrabold tracking-[-0.01em] text-fg">{title}</span>
+          <h1 className="text-[22px] font-extrabold tracking-[-0.01em] text-fg">{title}</h1>
           {badgeLabel && <StatusPill label={badgeLabel} tone={badgeTone} />}
         </div>
         {subtitle != null && <div className="mt-1 text-[13.5px] text-fg-secondary">{subtitle}</div>}

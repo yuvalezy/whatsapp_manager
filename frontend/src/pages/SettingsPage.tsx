@@ -246,6 +246,13 @@ function BackfillTab() {
   const running = status?.running ?? false;
   const busy = running || runAll.isPending || runOne.isPending || runGroup.isPending;
 
+  // Both inputs are type="date", so values are always `YYYY-MM-DD` (or '').
+  // Lexical comparison of those equals chronological order, so `from > to` is an
+  // inverted range. The backend rejects this authoritatively (date-window.ts);
+  // this mirrors it inline. The hint documents the UTC calendar-day boundary.
+  const dateError =
+    from && to && from > to ? '"From" is later than "To".' : null;
+
   // Values are prefixed so a group id can never collide with a phone number:
   // 'all' = everything, 'c:<number>' = one contact, 'g:<groupId>' = one group.
   // Grouped into sections (General / Contacts / Groups); each section is sorted
@@ -279,6 +286,7 @@ function BackfillTab() {
   ];
 
   const run = () => {
+    if (dateError) return;
     const window = { from: from || undefined, to: to || undefined };
     const onSuccess = () =>
       toast({ tone: 'success', title: 'Backfill started', description: 'Progress updates below.' });
@@ -312,11 +320,26 @@ function BackfillTab() {
             className="w-[280px]"
           />
           <Input label="From" type="date" value={from} onChange={setFrom} className="w-[170px]" />
-          <Input label="To" type="date" value={to} onChange={setTo} className="w-[170px]" />
-          <Button label="Run backfill" icon="refreshCw" loading={busy} disabled={running} onClick={run} />
+          <Input
+            label="To"
+            type="date"
+            value={to}
+            onChange={setTo}
+            error={dateError ?? undefined}
+            className="w-[170px]"
+          />
+          <Button
+            label="Run backfill"
+            icon="refreshCw"
+            loading={busy}
+            disabled={running || !!dateError}
+            onClick={run}
+          />
         </div>
         <span className="text-xs text-fg-muted">
           History depth is limited to what WhatsApp has synced to this device. Dates are optional.
+          A date-only “To” covers that whole calendar day (UTC): a backfill through 2026-07-15
+          captures everything up to, but not including, 2026-07-16 00:00 UTC.
         </span>
       </div>
 

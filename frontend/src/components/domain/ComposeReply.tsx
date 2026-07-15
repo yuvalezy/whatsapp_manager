@@ -544,6 +544,7 @@ export function ComposeReply({
               <span>Context:</span>
               <button
                 type="button"
+                aria-label="Decrease context message count"
                 className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-line-strong bg-bg text-fg-muted hover:text-fg disabled:opacity-40"
                 disabled={isBusy || messageCount <= 1}
                 onClick={() => onMessageCountChange(Math.max(1, messageCount - 1))}
@@ -553,6 +554,7 @@ export function ComposeReply({
               <span className="font-mono text-[12px] text-fg">{messageCount}</span>
               <button
                 type="button"
+                aria-label="Increase context message count"
                 className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-line-strong bg-bg text-fg-muted hover:text-fg disabled:opacity-40"
                 disabled={isBusy || messageCount >= 20}
                 onClick={() => onMessageCountChange(Math.min(20, messageCount + 1))}

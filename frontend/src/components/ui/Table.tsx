@@ -74,25 +74,45 @@ export function Table<Row extends Record<string, unknown>>({
                 return (
                   <th
                     key={col.key}
-                    onClick={() => col.sortable && onSort?.(col.key)}
+                    aria-sort={
+                      col.sortable
+                        ? active
+                          ? sortDir === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
+                        : undefined
+                    }
                     className={cn(
                       'sticky top-0 z-[1] select-none whitespace-nowrap border-b border-line-strong bg-surface-2 text-[11.5px] font-bold uppercase tracking-[0.04em] text-fg-secondary',
                       cellPad,
                       col.align === 'right' ? 'text-right' : 'text-left',
-                      col.sortable ? 'cursor-pointer' : 'cursor-default',
                     )}
                   >
-                    <span
-                      className={cn(
-                        'inline-flex items-center gap-[5px]',
-                        col.align === 'right' && 'flex-row-reverse',
-                      )}
-                    >
-                      {col.label}
-                      {active && (
-                        <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size={12} className="text-primary" />
-                      )}
-                    </span>
+                    {col.sortable ? (
+                      <button
+                        type="button"
+                        onClick={() => onSort?.(col.key)}
+                        className={cn(
+                          'wm-focus-ring inline-flex cursor-pointer items-center gap-[5px] rounded-sm outline-none',
+                          col.align === 'right' && 'flex-row-reverse',
+                        )}
+                      >
+                        {col.label}
+                        {active && (
+                          <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size={12} className="text-primary" />
+                        )}
+                      </button>
+                    ) : (
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-[5px]',
+                          col.align === 'right' && 'flex-row-reverse',
+                        )}
+                      >
+                        {col.label}
+                      </span>
+                    )}
                   </th>
                 );
               })}

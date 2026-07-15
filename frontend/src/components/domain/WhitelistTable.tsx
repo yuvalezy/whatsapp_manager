@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
 import { IconButton } from '@/components/ui/IconButton';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
@@ -48,6 +50,9 @@ export interface WhitelistUpdate {
 export interface WhitelistTableProps {
   rows?: WhitelistEntry[];
   loading?: boolean;
+  /** A fetch error message. When set, an error state is shown instead of the table. */
+  error?: ReactNode;
+  onRetry?: () => void;
   deletingId?: string | number | null;
   onDelete?: (id: string | number) => void;
   onLink?: (row: WhitelistEntry) => void;
@@ -77,7 +82,7 @@ function sortValue(row: WhitelistEntry, key: WhitelistSortKey): string {
   }
 }
 
-export function WhitelistTable({ rows = [], loading = false, deletingId, onDelete, onLink, onUpdate, className }: WhitelistTableProps) {
+export function WhitelistTable({ rows = [], loading = false, error, onRetry, deletingId, onDelete, onLink, onUpdate, className }: WhitelistTableProps) {
   const [pending, setPending] = useState<WhitelistEntry | null>(null);
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [draftLabel, setDraftLabel] = useState('');
@@ -127,6 +132,18 @@ export function WhitelistTable({ rows = [], loading = false, deletingId, onDelet
         <Skeleton width="100%" height="46px" />
         <Skeleton width="100%" height="46px" />
         <Skeleton width="100%" height="46px" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={cn('rounded-wm-card border border-line-strong bg-surface', className)}>
+        <ErrorState
+          title="Couldn't load whitelist"
+          description={error}
+          onRetry={onRetry}
+        />
       </div>
     );
   }

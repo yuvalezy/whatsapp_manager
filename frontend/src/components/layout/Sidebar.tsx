@@ -15,10 +15,15 @@ export interface SidebarProps {
   onToggleCollapse?: () => void;
   /** Per-nav-key count badges (e.g. { conversations: 3 } for unread). */
   badges?: Record<string, number>;
+  /**
+   * Live outbound capability. `undefined` = loading/unknown (renders the safe
+   * "disabled" presentation), `false` = disabled, `true` = enabled.
+   */
+  outboundEnabled?: boolean;
   className?: string;
 }
 
-export function Sidebar({ activeKey, collapsed = false, onNavigate, onToggleCollapse, badges, className }: SidebarProps) {
+export function Sidebar({ activeKey, collapsed = false, onNavigate, onToggleCollapse, badges, outboundEnabled, className }: SidebarProps) {
   return (
     <div
       className={cn(
@@ -79,13 +84,16 @@ export function Sidebar({ activeKey, collapsed = false, onNavigate, onToggleColl
       {/* Footer */}
       <div
         className={cn(
-          'mt-2 flex items-center gap-2 border-t border-line py-2.5 text-fg-muted',
+          'mt-2 flex items-center gap-2 border-t border-line py-2.5',
           collapsed ? 'justify-center px-0' : 'justify-start px-2.5',
+          outboundEnabled ? 'text-warning-fg' : 'text-fg-muted',
         )}
       >
-        <Icon name="lock" size={13} />
+        <Icon name={outboundEnabled ? 'send' : 'lock'} size={13} />
         {!collapsed && (
-          <span className="whitespace-nowrap text-[11.5px] font-semibold">Outbound disabled</span>
+          <span className="whitespace-nowrap text-[11.5px] font-semibold">
+            {outboundEnabled ? 'Outbound enabled' : 'Outbound disabled'}
+          </span>
         )}
       </div>
 

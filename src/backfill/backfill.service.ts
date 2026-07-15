@@ -68,7 +68,9 @@ class BackfillService {
     for (const message of messages) {
       const ts = message.timestamp * 1000; // Unix seconds → ms
       if (opts.since !== undefined && ts < opts.since) continue;
-      if (opts.until !== undefined && ts > opts.until) continue;
+      // `until` is an exclusive upper bound (see date-window.ts); a message at
+      // exactly the boundary is excluded.
+      if (opts.until !== undefined && ts >= opts.until) continue;
       if (SKIP_TYPES.has(String(message.type))) continue;
 
       this.status.processed += 1;
@@ -124,7 +126,8 @@ class BackfillService {
     for (const message of messages) {
       const ts = message.timestamp * 1000; // Unix seconds → ms
       if (opts.since !== undefined && ts < opts.since) continue;
-      if (opts.until !== undefined && ts > opts.until) continue;
+      // `until` is an exclusive upper bound (see date-window.ts).
+      if (opts.until !== undefined && ts >= opts.until) continue;
       if (SKIP_TYPES.has(String(message.type))) continue;
 
       this.status.processed += 1;
