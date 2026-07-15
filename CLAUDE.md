@@ -175,6 +175,20 @@ Key structural conventions:
 - **Startup is non-blocking:** `whatsappService.initialize()` runs in the background
   so `/qr` and the REST API stay reachable during login. State transitions arrive via
   events, not the initialize promise.
+- **Orphaned-browser self-heal (added 2026-07-14):** the Chrome that `whatsapp-web.js`
+  launches routinely outlives its Node process — `tsx watch` force-kills on reload
+  ("Previous process hasn't exited yet"), Ctrl-C races `client.destroy()`, and
+  SIGKILL/crash skips teardown. The orphan keeps holding
+  `.wwebjs_auth/session-<clientId>`, so the next boot dies with "The browser is already
+  running for <dir>" or a `Page.navigate` ProtocolError — which surfaces in the UI as
+  **"waiting to link device" even though the session is perfectly valid** (this exact
+  misdiagnosis has cost hours; it is *not* a `WA_WEB_VERSION` problem — check for a
+  stray browser first). `whatsapp/session-lock.ts` (`reclaimSessionLock()`, called at
+  the top of `initialize()`) clears the lock: it only ever kills a PID that `/proc`
+  confirms is a browser running with *our* `--user-data-dir`, never a liveness guess,
+  so it can't hit an unrelated process. Note `SingletonLock` is a symlink to a
+  *label* (`<host>-<pid>`), not a real path — probe it with `lstat`, never `existsSync`
+  (which follows the link, finds nothing, and silently reports no lock).
 - **Outbound is triple-gated:** disabled unless `ENABLE_OUTBOUND=true`, then
   rate-limited, single-recipient, and the target must be either a **whitelisted
   contact** (`{ number }` → `@c.us`) or a **monitored group** (`{ groupId }` →
