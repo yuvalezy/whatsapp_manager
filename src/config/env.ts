@@ -42,6 +42,13 @@ const envSchema = z.object({
   WA_WEB_VERSION: z.string().default('2.3000.1043159177-alpha'),
   WA_WEB_VERSION_REMOTE_PATH: z.string().optional(),
 
+  // Liveness probe for the READY client. The browser page can die without the
+  // SDK ever emitting `disconnected` (see whatsapp/health-probe.ts), leaving the
+  // service stuck reporting READY. The probe demotes a dead client into the
+  // normal reconnect path. Off ⇒ that failure mode needs a manual restart again.
+  ENABLE_HEALTH_PROBE: boolFlag(true),
+  HEALTH_PROBE_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
+
   // Safety
   ENABLE_OUTBOUND: boolFlag(false),
   OUTBOUND_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),

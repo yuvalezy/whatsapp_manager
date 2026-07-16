@@ -189,6 +189,26 @@ Key structural conventions:
   so it can't hit an unrelated process. Note `SingletonLock` is a symlink to a
   *label* (`<host>-<pid>`), not a real path — probe it with `lstat`, never `existsSync`
   (which follows the link, finds nothing, and silently reports no lock).
+- **READY is not self-reporting — it's probed (added 2026-07-16):** the SDK emits
+  `disconnected` only when WhatsApp signals a logout/state change; **nothing wires
+  browser or page death to it**. So the page can die under a live Chrome (main frame
+  detaches → every call throws "Attempted to use detached Frame") while `getState()`
+  happily stays `READY` — that happened for ~5h on 2026-07-16 and needed a manual
+  restart. Worse, outbound's `getState() !== 'READY'` guard trusts that state, so
+  sends 500'd instead of returning the clean 503. `whatsapp/health-probe.ts`
+  (`runHealthProbe()`, timer in `app.ts` mirroring `flushIgnored`) executes
+  `typeof window.WWebJS !== 'undefined'` in the page every
+  `HEALTH_PROBE_INTERVAL_MS` — deliberately the library's **own** injection check
+  (`Client.js`), not WhatsApp internals, which change every WA Web build. A throw
+  means the page is gone; `false` means WA Web reloaded and lost the injection. Both
+  demote the client into the **existing** `scheduleReconnect()` path — recovery stays
+  in one place. Two constraints keep it safe: it only acts after `FAILURE_THRESHOLD`
+  *consecutive* failures (a reconnect costs a browser relaunch, so one GC-pause blip
+  must not trigger it), and it only ever demotes a `READY` client — it never marks one
+  ready. Verified end-to-end by `kill -9`ing the browser: dead → recovered in 67s
+  unattended. Don't "simplify" it into matching error strings like `detached Frame`
+  (brittle across puppeteer versions) — the probe asserts liveness, it doesn't classify
+  failures.
 - **Outbound is triple-gated:** disabled unless `ENABLE_OUTBOUND=true`, then
   rate-limited, single-recipient, and the target must be either a **whitelisted
   contact** (`{ number }` → `@c.us`) or a **monitored group** (`{ groupId }` →

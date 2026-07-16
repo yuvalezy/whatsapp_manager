@@ -20,6 +20,7 @@ import { authRouter } from './auth/auth.routes';
 import { authGuard } from './auth/auth.middleware';
 import { runTranscriptionPass } from './enrichment/worker';
 import { whatsappService } from './whatsapp/client';
+import { runHealthProbe } from './whatsapp/health-probe';
 import { ignoredStats } from './messages/ignored-stats';
 import { messageService } from './messages/message.service';
 import { sseManager } from './sse';
@@ -205,6 +206,13 @@ async function main(): Promise<void> {
   }, env.TRANSCRIPTION_POLL_INTERVAL_MS);
   transcriptionTimer.unref();
 
+  // Liveness probe: catches a browser page that died without a `disconnected`
+  // event, which otherwise leaves the service reporting READY forever.
+  const healthProbeTimer = setInterval(() => {
+    void runHealthProbe().catch((err) => logger.error({ err }, 'Health probe pass failed'));
+  }, env.HEALTH_PROBE_INTERVAL_MS);
+  healthProbeTimer.unref();
+
   // Graceful shutdown
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
@@ -213,6 +221,7 @@ async function main(): Promise<void> {
     logger.info({ signal }, 'Shutting down…');
     clearInterval(flushTimer);
     clearInterval(transcriptionTimer);
+    clearInterval(healthProbeTimer);
     await flushIgnored();
     server.close();
     try {
