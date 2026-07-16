@@ -9,6 +9,15 @@ import { AuthProvider } from '@/auth/AuthContext';
 import { App } from '@/App';
 import './index.css';
 
+// PWA installability. Production only — a service worker in dev intercepts
+// Vite's module requests and serves confusion. The worker itself never caches
+// (see public/sw.js), so there's no stale-shell risk.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js');
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

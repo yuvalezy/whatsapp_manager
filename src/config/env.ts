@@ -42,6 +42,13 @@ const envSchema = z.object({
   WA_WEB_VERSION: z.string().default('2.3000.1043159177-alpha'),
   WA_WEB_VERSION_REMOTE_PATH: z.string().optional(),
 
+  // Liveness probe for the READY client. The browser page can die without the
+  // SDK ever emitting `disconnected` (see whatsapp/health-probe.ts), leaving the
+  // service stuck reporting READY. The probe demotes a dead client into the
+  // normal reconnect path. Off ⇒ that failure mode needs a manual restart again.
+  ENABLE_HEALTH_PROBE: boolFlag(true),
+  HEALTH_PROBE_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
+
   // Safety
   ENABLE_OUTBOUND: boolFlag(false),
   OUTBOUND_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
@@ -84,6 +91,16 @@ const envSchema = z.object({
   WEBHOOK_URL: z.string().url().optional(),
   WEBHOOK_SECRET: z.string().optional(),
   WEBHOOK_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+
+  // ── Ops alerting (terminal connection states) ─────────────────
+  // When set, terminal WhatsApp states (reconnect exhausted, LOGOUT/device
+  // unlinked, auth failure) and post-outage recoveries are POSTed here as
+  // plain text with ntfy-style Title/Priority/Tags headers — works as-is with
+  // an ntfy.sh topic URL, and any webhook that accepts a text body. This is
+  // the only channel that still works when the dead channel is WhatsApp
+  // itself and no dashboard tab is open. Best-effort: never blocks recovery.
+  ALERT_WEBHOOK_URL: z.string().url().optional(),
+  ALERT_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
 
   // ── Encrypted credentials store ──────────────────────────────
   // Master key for AES-256-GCM at-rest encryption of provider API keys.

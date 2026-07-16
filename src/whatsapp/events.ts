@@ -1,5 +1,6 @@
 import type { Client, Message, Reaction } from 'whatsapp-web.js';
 import { env } from '../config/env';
+import { alertService } from '../alerts/alert.service';
 import { logger } from '../logger';
 import { printQrToTerminal } from './qr';
 import { whitelistService } from '../whitelist/whitelist.service';
@@ -50,6 +51,11 @@ export function registerEvents(
     service.setState('AUTH_FAILURE');
     sseManager.broadcast('status', buildStatusData());
     logger.error({ msg }, 'WhatsApp authentication failed');
+    alertService.send(
+      'WhatsApp Manager auth failure',
+      'Session authentication failed — the saved session is likely invalid. Re-link may be required.',
+      { priority: 'urgent', tags: ['rotating_light'] },
+    );
   });
 
   client.on('ready', () => {

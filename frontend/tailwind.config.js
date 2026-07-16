@@ -59,6 +59,7 @@ export default {
         'wm-fade-in': { from: { opacity: '0' }, to: { opacity: '1' } },
         'wm-scale-in': { from: { opacity: '0', transform: 'translateY(8px) scale(0.98)' }, to: { opacity: '1', transform: 'translateY(0) scale(1)' } },
         'wm-slide-in': { from: { transform: 'translateX(100%)' }, to: { transform: 'translateX(0)' } },
+        'wm-slide-in-left': { from: { transform: 'translateX(-100%)' }, to: { transform: 'translateX(0)' } },
       },
       animation: {
         'wm-spin': 'wm-spin 0.7s linear infinite',
@@ -67,6 +68,7 @@ export default {
         'wm-fade-in': 'wm-fade-in 0.15s ease-out',
         'wm-scale-in': 'wm-scale-in 0.16s cubic-bezier(0.16,1,0.3,1)',
         'wm-slide-in': 'wm-slide-in 0.22s cubic-bezier(0.16,1,0.3,1)',
+        'wm-slide-in-left': 'wm-slide-in-left 0.22s cubic-bezier(0.16,1,0.3,1)',
       },
     },
   },

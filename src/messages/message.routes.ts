@@ -423,6 +423,46 @@ messagesRouter.post('/:number/read', async (req, res, next) => {
   }
 });
 
+// POST /messages/:number/typing — show (or clear) the "typing…" indicator in
+// the recipient's WhatsApp while the user composes a reply. Body:
+// { state?: 'typing' | 'clear' } (default 'typing'). Gated like outbound —
+// broadcasting presence is an outbound signal, so it stays off unless sending
+// is deliberately enabled. WhatsApp auto-expires the typing state after ~25s,
+// so the frontend re-signals periodically while the user keeps typing.
+messagesRouter.post('/:number/typing', async (req, res, next) => {
+  const { number } = req.params;
+  const state = (req.body as { state?: unknown } | undefined)?.state === 'clear' ? 'clear' : 'typing';
+  try {
+    if (!env.ENABLE_OUTBOUND) {
+      res.status(403).json({ error: 'Outbound messaging is disabled. Set ENABLE_OUTBOUND=true to enable.' });
+      return;
+    }
+    const isGroup = groupService.isMonitored(number);
+    if (!whitelistService.isWhitelisted(number) && !isGroup) {
+      res.status(403).json({ error: 'Not a whitelisted contact or monitored group' });
+      return;
+    }
+    const client = whatsappService.getClient();
+    if (!client || whatsappService.getState() !== 'READY') {
+      res.status(503).json({ error: 'WhatsApp client is not ready' });
+      return;
+    }
+
+    // Same chat-id derivation as the read route: prefer the thread's stored
+    // chat_id (correct for LID-addressed chats), fall back to the canonical jid.
+    const [latest] = await messageService.listByNumber(number, 1, 0);
+    const chatId = latest?.chat_id || (isGroup ? toGroupChatId(number) : toChatId(number));
+    const chat = await client.getChatById(chatId);
+    if (state === 'typing') await chat.sendStateTyping();
+    else await chat.clearState();
+
+    res.json({ data: { ok: true, state } });
+  } catch (err) {
+    logger.error({ err, number, state }, 'Typing-state signal failed');
+    next(err);
+  }
+});
+
 const IMAGE_MEDIA_TYPES = new Set(['image', 'sticker']);
 
 /** Read downloaded image files in a window into base64 data URLs for vision (capped). */

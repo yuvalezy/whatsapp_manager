@@ -40,6 +40,16 @@ is **off by default**.
 - 💵 **Cost tracking** — per-call OpenAI/DeepSeek spend on the Costs page + a dashboard
   KPI (`GET /costs/summary`). Rates are configurable estimates — verify against current
   provider pricing.
+- 😀 **Reactions, edits & deletes** — emoji reactions are captured live and shown as
+  chips on the bubbles; in-place edits update the stored body (`edited_at`), and
+  "delete for everyone" soft-deletes with the content retained.
+- ⌨️ **Typing indicator** — while you compose a reply the recipient sees "typing…"
+  in WhatsApp (`POST /messages/:number/typing`; only when outbound is enabled).
+- 🚨 **Ops alerts** — point `ALERT_WEBHOOK_URL` at an ntfy topic and get a phone push
+  when the client is terminally down (reconnect exhausted / device unlinked / auth
+  failure) and when it recovers — the one channel that works when WhatsApp itself is dead.
+- 📱 **Mobile + PWA** — responsive layout (drawer nav, stacked conversations with a
+  back button) and an installable app shell (manifest + no-cache service worker).
 - 🧮 **Ignored = counters only** — non-whitelisted traffic is counted, never stored with content.
 - 🚦 **Safety first** — `ENABLE_OUTBOUND=false`, rate-limited outbound scaffold, no bulk sending.
 - 🔌 **`MessageRouter` seam** — swap storage for webhook / CRM / AI orchestrator without touching ingestion.

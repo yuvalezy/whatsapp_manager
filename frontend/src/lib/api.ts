@@ -284,6 +284,15 @@ export const api = {
       method: 'POST',
     }),
 
+  // Show/clear the "typing…" indicator in the recipient's WhatsApp while the
+  // user composes. Fire-and-forget (gated server-side by ENABLE_OUTBOUND);
+  // WhatsApp auto-expires the state after ~25s, so it's re-signaled while typing.
+  signalTyping: (id: string, state: 'typing' | 'clear') =>
+    request<{ ok: boolean; state: string }>(`/messages/${encodeURIComponent(id)}/typing`, {
+      method: 'POST',
+      body: JSON.stringify({ state }),
+    }),
+
   // Absolute URL for a message's downloaded attachment. Usable as an <img>/<audio>
   // src — carries the JWT as `?access_token=` since element requests can't set
   // headers (falls back to the API key when that's the configured credential).

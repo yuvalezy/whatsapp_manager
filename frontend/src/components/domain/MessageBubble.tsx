@@ -8,7 +8,7 @@ import { ImageLightbox } from './ImageLightbox';
 import { cn } from '@/lib/cn';
 import { formatDateTime, formatPhone } from '@/lib/format';
 import { api } from '@/lib/api';
-import type { MessageMention, StoredMessage } from '@/types';
+import type { MessageMention, MessageReaction, StoredMessage } from '@/types';
 
 // ============================================================================
 // MessageBubble — one WhatsApp-style chat bubble: media, body/transcript,
@@ -135,6 +135,9 @@ export function MessageBubble({
               whole
             />
           </div>
+        )}
+        {!!msg.reactions?.length && (
+          <ReactionChips reactions={msg.reactions} whitelistNames={whitelistNames} ownNumber={ownNumber} />
         )}
         <div className="flex items-center justify-end gap-1.5 text-[10.5px] text-fg-muted">
           {isDeleted && (
@@ -293,6 +296,49 @@ function QuotedSnippet({
     </button>
   ) : (
     <div className={base}>{inner}</div>
+  );
+}
+
+/**
+ * Emoji reactions on a bubble, grouped per emoji with a count when several
+ * people picked the same one. The tooltip names the reactors — "You" for the
+ * connected account, the whitelist name when known, else a formatted number
+ * (same resolution order as @mentions).
+ */
+function ReactionChips({
+  reactions,
+  whitelistNames,
+  ownNumber,
+}: {
+  reactions: MessageReaction[];
+  whitelistNames?: Map<string, string>;
+  ownNumber?: string;
+}) {
+  const groups = new Map<string, string[]>();
+  for (const r of reactions) {
+    const who =
+      ownNumber && r.sender_number === ownNumber
+        ? 'You'
+        : (whitelistNames?.get(r.sender_number) ?? formatPhone(r.sender_number));
+    const list = groups.get(r.reaction) ?? [];
+    list.push(who);
+    groups.set(r.reaction, list);
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {[...groups.entries()].map(([emoji, whos]) => (
+        <span
+          key={emoji}
+          title={whos.join(', ')}
+          className="inline-flex items-center gap-1 rounded-pill border border-line-strong bg-surface px-1.5 py-0.5 text-[12px] leading-none"
+        >
+          <span>{emoji}</span>
+          {whos.length > 1 && (
+            <span className="text-[10.5px] font-semibold text-fg-secondary">{whos.length}</span>
+          )}
+        </span>
+      ))}
+    </div>
   );
 }
 

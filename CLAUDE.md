@@ -37,8 +37,10 @@ Frontend (run from `frontend/`):
 | `npm run build` | `tsc -b && vite build` → `frontend/dist/`. |
 | `npm run typecheck` / `npm run lint` | Both are `tsc -b` — the only quality gate. |
 
-There are **no automated tests** in either app. Verify changes with `typecheck`
-and by exercising the REST endpoints (see README's curl walkthrough) or the UI.
+There is **no real test suite** — a single unit test exists
+(`src/backfill/date-window.test.ts`, run via `npm test`). Verify changes with
+`typecheck` and by exercising the REST endpoints (see README's curl
+walkthrough) or the UI.
 
 A running Postgres is required for the backend to boot. `.env.example` defaults to
 a local instance; `docker compose up --build` brings up Postgres + app together.
@@ -56,7 +58,8 @@ whatsapp-web.js Client (client.ts, singleton facade)
         ▼
   router/message-router.ts  ── MessageRouter interface
         ├─ StorageMessageRouter → messageService.save() → Postgres `messages`
-        └─ (future webhook / CRM / AI routers compose into CompositeMessageRouter)
+        ├─ WebhookMessageRouter → signed JSON POST when WEBHOOK_URL is set
+        └─ (future CRM / AI routers compose into CompositeMessageRouter)
 ```
 
 Ingestion code (`events.ts`) only ever calls `router.route()`. To add a downstream
@@ -145,6 +148,53 @@ Key structural conventions:
 - SQL for the new `messages` columns still lives only in `message.service.ts`; the
   `credentials` table SQL lives only in `credentials.service.ts`. Keep that boundary.
 
+### Realtime, lifecycle, auth & ops
+
+- **SSE is the realtime backbone** (`sse/index.ts`, `GET /events`): the frontend
+  does NOT poll for messages/threads/status — `useSse.ts` listens for `message`
+  (new row), `message-updated` (edit / revoke / reaction / transcription done),
+  `ack`, and `status` events and invalidates React Query caches. Broadcasts are
+  best-effort and must never break persistence. Anything that mutates a stored
+  message should end with `messageService.broadcastUpdated(...)` (public — the
+  reaction service calls it too).
+- **Message lifecycle capture** (`events.ts`): beyond `message_create`, the app
+  subscribes `message_ack` (delivery ticks), `message_edit` (in-place body edit,
+  stamps `edited_at`), `message_revoke_everyone` (soft-delete, chat-scoped
+  guard), and `message_reaction` → `reactions/reaction.service.ts`
+  (`message_reactions` table, FK-gated to stored messages so ignored chats can
+  never leak; current-state per (message, sender), removal deletes the row).
+  Reactions are **aggregated into every message read** via the `selectCols()`
+  jsonb subquery in `message.service.ts` and rendered as chips on
+  `MessageBubble`.
+- **Read state & unread counts** (`reads/read-state.service.ts`): per-thread
+  watermark; `POST /messages/:number/read` also best-effort `sendSeen`s the
+  WhatsApp chat. `POST /messages/:number/typing` mirrors it for the outbound
+  **typing indicator** (`sendStateTyping`/`clearState`) — gated on
+  `ENABLE_OUTBOUND` because presence is an outbound signal; the compose box
+  throttles it (4s re-signal, 5s-idle/send/unmount clear).
+- **Auth is three-tier** (`auth/`): personal JWT (forever-token, full access,
+  `POST /auth/login`), external `API_KEY` (read-only GETs once a JWT login
+  exists), and scoped `OUTBOUND_API_KEY` (POST allowlist: outbound send,
+  summarize, backfill). When neither JWT_SECRET nor API_KEY is set the API is
+  fully open (local dev). Timing-safe compares throughout.
+- **Full-text search** (`GET /messages/search`): `search_tsv` STORED generated
+  column (body + transcript + translated_body, `simple` config) with a GIN
+  index; ranked `websearch_to_tsquery`. **AI summaries**
+  (`summaries/`, `POST /messages/:number/summarize`): windowed thread summary
+  via OpenAI with image vision, persisted history.
+- **Ops alerting** (`alerts/alert.service.ts`): when `ALERT_WEBHOOK_URL` is set
+  (ntfy-style plain-text POST), terminal states push a phone alert — reconnect
+  exhausted, LOGOUT/device unlinked, auth failure — plus a recovery notice.
+  This is the only channel that works when WhatsApp itself is down; never let
+  it block the reconnect path it reports on.
+- **Vendored SDK fixes** (`patches/whatsapp-web.js+*.patch`, via patch-package
+  postinstall): newer WA Web builds break `MsgKey._serialized` retrieval and
+  group-metadata serialization; the patches restore ids and make chat
+  serialization degrade per-chat instead of rejecting whole lists. If an SDK
+  upgrade lands, re-derive these patches before deleting them.
+- **EZY Portal linking** (`ezy-portal/`): whitelist entries link to a BP
+  contact, groups link BP-only; tenant API key lives in the encrypted store.
+
 ### Non-obvious behaviors — don't regress these
 
 - **Privacy invariant:** ignored traffic (non-whitelisted, non-monitored groups,
@@ -189,6 +239,26 @@ Key structural conventions:
   so it can't hit an unrelated process. Note `SingletonLock` is a symlink to a
   *label* (`<host>-<pid>`), not a real path — probe it with `lstat`, never `existsSync`
   (which follows the link, finds nothing, and silently reports no lock).
+- **READY is not self-reporting — it's probed (added 2026-07-16):** the SDK emits
+  `disconnected` only when WhatsApp signals a logout/state change; **nothing wires
+  browser or page death to it**. So the page can die under a live Chrome (main frame
+  detaches → every call throws "Attempted to use detached Frame") while `getState()`
+  happily stays `READY` — that happened for ~5h on 2026-07-16 and needed a manual
+  restart. Worse, outbound's `getState() !== 'READY'` guard trusts that state, so
+  sends 500'd instead of returning the clean 503. `whatsapp/health-probe.ts`
+  (`runHealthProbe()`, timer in `app.ts` mirroring `flushIgnored`) executes
+  `typeof window.WWebJS !== 'undefined'` in the page every
+  `HEALTH_PROBE_INTERVAL_MS` — deliberately the library's **own** injection check
+  (`Client.js`), not WhatsApp internals, which change every WA Web build. A throw
+  means the page is gone; `false` means WA Web reloaded and lost the injection. Both
+  demote the client into the **existing** `scheduleReconnect()` path — recovery stays
+  in one place. Two constraints keep it safe: it only acts after `FAILURE_THRESHOLD`
+  *consecutive* failures (a reconnect costs a browser relaunch, so one GC-pause blip
+  must not trigger it), and it only ever demotes a `READY` client — it never marks one
+  ready. Verified end-to-end by `kill -9`ing the browser: dead → recovered in 67s
+  unattended. Don't "simplify" it into matching error strings like `detached Frame`
+  (brittle across puppeteer versions) — the probe asserts liveness, it doesn't classify
+  failures.
 - **Outbound is triple-gated:** disabled unless `ENABLE_OUTBOUND=true`, then
   rate-limited, single-recipient, and the target must be either a **whitelisted
   contact** (`{ number }` → `@c.us`) or a **monitored group** (`{ groupId }` →
@@ -225,8 +295,17 @@ contract. The essentials that bite people:
 - Import siblings with the `@/` alias. Reuse helpers from `@/lib` (`cn`, `format`)
   and types from `@/types` — do not duplicate.
 - Server state is React Query only, via the hooks in `src/hooks/` (`useStatus`,
-  `useQr`, `useWhitelist`, `useMessages`). `useStatus` polls every 5s to keep the
-  connection badge live. Do not add new npm dependencies.
+  `useQr`, `useWhitelist`, `useMessages`, …). **SSE drives freshness, not
+  polling**: `useSse` (mounted once in `AppLayout`) invalidates caches on
+  `message` / `message-updated` / `ack` / `status` events, so hooks default to
+  `refetchInterval: 0`. The only real poller is `useQr` (4s, only until
+  linked). Do not add new npm dependencies.
+- **Responsive + PWA:** below `lg` the sidebar becomes a TopBar-hamburger
+  drawer (`AppLayout`); below `md` Conversations stacks list ⇄ thread with a
+  back button (and skips the desktop auto-select of the newest thread). The
+  app is installable — `public/manifest.webmanifest` + `public/sw.js` (a
+  deliberately **no-cache** service worker, registered in prod only). Web Push
+  is spec'd but not built: `docs/web-push-spec.md`.
 - The API client (`src/lib/api.ts`) is same-origin in dev because Vite proxies the
   API prefixes (`/status`, `/qr`, `/whitelist`, `/messages`, `/outbound`, `/health`)
   to the backend. `VITE_API_BASE` points at an absolute backend; `VITE_API_KEY` is

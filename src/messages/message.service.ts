@@ -16,14 +16,29 @@ import {
 
 const LANGUAGE_VOTES: readonly PreferredLanguage[] = ['es', 'en', 'he'];
 
-const SELECT_COLS = `
+/**
+ * Column list for StoredMessage reads, including the aggregated `reactions`
+ * array. The reactions subquery is correlated, so it must qualify the outer
+ * messages row — pass the FROM alias (`'messages'` when the table is unaliased,
+ * `'m'`/`'t'` where queries alias it).
+ */
+const selectCols = (alias = 'messages') => `
   id, message_id, chat_id, contact_number, sender_number, sender_name,
   body, message_type, direction, timestamp, created_at, updated_at, metadata,
   detected_language,
   media_type, media_path, media_mimetype, media_filesize, media_status,
   transcript, transcript_language, transcript_translated, transcription_status,
   translated_body, translation_status,
-  ack, reply_to_message_id, edited_at, is_deleted, deleted_at, mentions
+  ack, reply_to_message_id, edited_at, is_deleted, deleted_at, mentions,
+  COALESCE((
+    SELECT jsonb_agg(jsonb_build_object(
+             'sender_number', r.sender_number,
+             'reaction', r.reaction,
+             'timestamp', r.timestamp
+           ) ORDER BY r.timestamp)
+      FROM message_reactions r
+     WHERE r.message_id = ${alias}.message_id
+  ), '[]'::jsonb) AS reactions
 `;
 
 /** Optional filters for the incremental-sync message list. All optional. */
@@ -129,7 +144,7 @@ class MessageService {
     if (inserted) {
       try {
         const { rows: full } = await query<StoredMessage>(
-          `SELECT ${SELECT_COLS} FROM messages WHERE message_id = $1`,
+          `SELECT ${selectCols()} FROM messages WHERE message_id = $1`,
           [msg.messageId],
         );
         if (full[0]) {
@@ -205,7 +220,7 @@ class MessageService {
     params.push(offset);
     const offsetIdx = params.length;
     const { rows } = await query<StoredMessage>(
-      `SELECT ${SELECT_COLS} FROM messages
+      `SELECT ${selectCols()} FROM messages
         ${whereSql}
         ORDER BY timestamp DESC
         LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -262,7 +277,7 @@ class MessageService {
     params.push(offset);
     const offsetIdx = params.length;
     const { rows } = await query<StoredMessage>(
-      `SELECT ${SELECT_COLS} ${fromSql}
+      `SELECT ${selectCols('m')} ${fromSql}
         WHERE ${whereSql}
         ORDER BY ts_rank(m.search_tsv, tsq.query) DESC, m.timestamp DESC
         LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -377,7 +392,7 @@ class MessageService {
   async listByNumber(rawNumber: string, limit = 100, offset = 0): Promise<StoredMessage[]> {
     const number = normalizeNumber(rawNumber);
     const { rows } = await query<StoredMessage>(
-      `SELECT ${SELECT_COLS} FROM messages
+      `SELECT ${selectCols()} FROM messages
         WHERE contact_number = $1
         ORDER BY timestamp DESC, id DESC
         LIMIT $2 OFFSET $3`,
@@ -400,7 +415,7 @@ class MessageService {
   ): Promise<StoredMessage[]> {
     const number = normalizeNumber(rawNumber);
     const { rows } = await query<StoredMessage>(
-      `SELECT ${SELECT_COLS} FROM messages
+      `SELECT ${selectCols()} FROM messages
         WHERE contact_number = $1
           AND (timestamp < $2 OR (timestamp = $2 AND id < $3::bigint))
         ORDER BY timestamp DESC, id DESC
@@ -414,7 +429,7 @@ class MessageService {
   async listByNumberBetween(rawNumber: string, startMs: number, endMs: number): Promise<StoredMessage[]> {
     const number = normalizeNumber(rawNumber);
     const { rows } = await query<StoredMessage>(
-      `SELECT ${SELECT_COLS} FROM messages
+      `SELECT ${selectCols()} FROM messages
         WHERE contact_number = $1
           AND timestamp >= $2
           AND timestamp <= $3
@@ -426,7 +441,7 @@ class MessageService {
 
   async getById(id: string | number): Promise<StoredMessage | null> {
     const { rows } = await query<StoredMessage>(
-      `SELECT ${SELECT_COLS} FROM messages WHERE id = $1`,
+      `SELECT ${selectCols()} FROM messages WHERE id = $1`,
       [id],
     );
     return rows[0] ?? null;
@@ -434,7 +449,7 @@ class MessageService {
 
   async getByMessageId(messageId: string): Promise<StoredMessage | null> {
     const { rows } = await query<StoredMessage>(
-      `SELECT ${SELECT_COLS} FROM messages WHERE message_id = $1`,
+      `SELECT ${selectCols()} FROM messages WHERE message_id = $1`,
       [messageId],
     );
     return rows[0] ?? null;
@@ -454,7 +469,7 @@ class MessageService {
   /** One row per contact — each contact's most recent message, for a conversation list. */
   async listThreads(): Promise<StoredMessage[]> {
     const { rows } = await query<StoredMessage>(
-      `SELECT ${SELECT_COLS} FROM (
+      `SELECT ${selectCols('t')} FROM (
          SELECT DISTINCT ON (contact_number) *
          FROM messages
          WHERE contact_number IS NOT NULL
@@ -565,11 +580,15 @@ class MessageService {
     if ((rowCount ?? 0) > 0) await this.broadcastUpdated(messageId);
   }
 
-  /** Push the current state of a mutated message to SSE clients (best-effort). */
-  private async broadcastUpdated(messageId: string): Promise<void> {
+  /**
+   * Push the current state of a mutated message to SSE clients (best-effort).
+   * Public so sibling services owning message-adjacent tables (reactions) can
+   * notify open threads after their own mutations.
+   */
+  async broadcastUpdated(messageId: string): Promise<void> {
     try {
       const { rows } = await query<StoredMessage>(
-        `SELECT ${SELECT_COLS} FROM messages WHERE message_id = $1`,
+        `SELECT ${selectCols()} FROM messages WHERE message_id = $1`,
         [messageId],
       );
       if (rows[0]) sseManager.broadcast('message-updated', rows[0]);
@@ -587,7 +606,7 @@ class MessageService {
   private async broadcastUpdatedById(id: string | number): Promise<void> {
     try {
       const { rows } = await query<StoredMessage>(
-        `SELECT ${SELECT_COLS} FROM messages WHERE id = $1`,
+        `SELECT ${selectCols()} FROM messages WHERE id = $1`,
         [id],
       );
       if (rows[0]) sseManager.broadcast('message-updated', rows[0]);
@@ -600,7 +619,7 @@ class MessageService {
   async listUntranslated(rawNumber: string): Promise<StoredMessage[]> {
     const number = normalizeNumber(rawNumber);
     const { rows } = await query<StoredMessage>(
-      `SELECT ${SELECT_COLS} FROM messages
+      `SELECT ${selectCols()} FROM messages
         WHERE contact_number = $1
           AND translation_status != 'done'
           AND (NULLIF(TRIM(COALESCE(body, '')), '') IS NOT NULL

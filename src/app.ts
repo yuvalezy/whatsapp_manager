@@ -20,6 +20,7 @@ import { authRouter } from './auth/auth.routes';
 import { authGuard } from './auth/auth.middleware';
 import { runTranscriptionPass } from './enrichment/worker';
 import { whatsappService } from './whatsapp/client';
+import { runHealthProbe } from './whatsapp/health-probe';
 import { ignoredStats } from './messages/ignored-stats';
 import { messageService } from './messages/message.service';
 import { sseManager } from './sse';
@@ -86,6 +87,8 @@ function buildApp() {
     });
   });
 
+  // Self-describing index. Keep this in sync with the routers mounted below —
+  // an external agent may discover the surface from here.
   app.get('/', (_req, res) => {
     res.json({
       service: 'whatsapp-manager',
@@ -96,21 +99,34 @@ function buildApp() {
         'GET /qr',
         'GET /status',
         'GET /contacts',
+        'GET /events (SSE: message, message-updated, ack, status)',
         'GET /whitelist',
         'POST /whitelist',
         'PUT /whitelist/:id',
+        'PUT /whitelist/:id/ezy-link',
         'DELETE /whitelist/:number',
         'GET /groups',
         'GET /groups/available',
+        'GET /groups/:groupId/participants',
         'POST /groups',
         'PUT /groups/:id/ezy-link',
         'DELETE /groups/:groupId',
         'GET /messages',
+        'GET /messages/count',
+        'GET /messages/search',
+        'GET /messages/stats',
+        'GET /messages/export',
         'GET /messages/threads',
         'GET /messages/:number',
+        'GET /messages/:id/media',
+        'GET /messages/:number/summaries',
         'POST /messages/:id/translate',
         'POST /messages/:number/translate-all',
-        'GET /messages/:id/media',
+        'POST /messages/:number/draft-reply',
+        'POST /messages/:number/read',
+        'POST /messages/:number/typing',
+        'POST /messages/:number/summarize',
+        'POST /outbound/send',
         'POST /backfill',
         'POST /backfill/:number',
         'POST /backfill/group/:groupId',
@@ -121,6 +137,9 @@ function buildApp() {
         'GET /costs',
         'GET /costs/summary',
         'GET /costs/daily',
+        'GET /ezy-portal/business-partners',
+        'GET /ezy-portal/business-partners/:bpId/contacts',
+        'POST /ezy-portal/business-partners/:bpId/contacts',
       ],
     });
   });
@@ -205,6 +224,13 @@ async function main(): Promise<void> {
   }, env.TRANSCRIPTION_POLL_INTERVAL_MS);
   transcriptionTimer.unref();
 
+  // Liveness probe: catches a browser page that died without a `disconnected`
+  // event, which otherwise leaves the service reporting READY forever.
+  const healthProbeTimer = setInterval(() => {
+    void runHealthProbe().catch((err) => logger.error({ err }, 'Health probe pass failed'));
+  }, env.HEALTH_PROBE_INTERVAL_MS);
+  healthProbeTimer.unref();
+
   // Graceful shutdown
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
@@ -213,6 +239,7 @@ async function main(): Promise<void> {
     logger.info({ signal }, 'Shutting down…');
     clearInterval(flushTimer);
     clearInterval(transcriptionTimer);
+    clearInterval(healthProbeTimer);
     await flushIgnored();
     server.close();
     try {
