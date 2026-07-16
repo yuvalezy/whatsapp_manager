@@ -29,6 +29,7 @@ import { SummarizeModal } from '@/components/domain/SummarizeModal';
 import { SummaryHistoryModal } from '@/components/domain/SummaryHistoryModal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/cn';
 import { dayKey, formatPhone, normalizeNumber } from '@/lib/format';
 import type { ComposeState, MessageMention, StoredMessage, SummarizeInput } from '@/types';
 
@@ -136,9 +137,16 @@ export function ConversationsPage() {
   // "You" rather than a bare phone number (see whitelistNames/MessageBubble).
   const ownNumber = normalizeNumber(status?.wid ?? '');
 
-  // Default to the most-recent conversation if none is selected.
+  // Default to the most-recent conversation if none is selected — desktop
+  // only. On a phone the panes stack (list ⇄ thread), so "no selection" IS the
+  // list view; auto-selecting would both skip it and defeat the back button.
   useEffect(() => {
-    if (!selected && threads && threads.length > 0) {
+    if (
+      !selected &&
+      threads &&
+      threads.length > 0 &&
+      window.matchMedia('(min-width: 768px)').matches
+    ) {
       setSearchParams({ number: threads[0].id });
     }
   }, [selected, threads, setSearchParams]);
@@ -502,7 +510,12 @@ export function ConversationsPage() {
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader title="Conversations" subtitle="Full threads for whitelisted contacts and monitored groups." />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="flex w-[300px] shrink-0 flex-col border-r border-line-strong bg-surface">
+        <div
+          className={cn(
+            'w-full flex-col border-r border-line-strong bg-surface md:flex md:w-[300px] md:shrink-0',
+            selected ? 'hidden' : 'flex',
+          )}
+        >
           <div className="shrink-0 border-b border-line-strong p-2.5">
             <Input
               type="search"
@@ -530,7 +543,13 @@ export function ConversationsPage() {
           </div>
         </div>
 
-        <div ref={paneRef} className="flex min-w-0 flex-1 flex-col overflow-hidden bg-bg">
+        <div
+          ref={paneRef}
+          className={cn(
+            'min-w-0 flex-1 flex-col overflow-hidden bg-bg md:flex',
+            selected ? 'flex' : 'hidden',
+          )}
+        >
           {!selected ? (
             <EmptyState
               icon="messageSquare"
@@ -539,22 +558,31 @@ export function ConversationsPage() {
             />
           ) : (
             <>
-              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line-strong bg-surface px-5 py-3.5">
-                <div className="flex items-center gap-2.5">
+              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line-strong bg-surface px-3 py-3.5 md:px-5">
+                <div className="flex min-w-0 shrink-0 items-center gap-2.5 max-md:max-w-[55%]">
+                  <div className="md:hidden">
+                    <IconButton
+                      icon="chevronLeft"
+                      size="sm"
+                      variant="ghost"
+                      ariaLabel="Back to conversations"
+                      onClick={() => setSearchParams({})}
+                    />
+                  </div>
                   <Avatar personName={name} size="sm" />
-                  <div className="flex flex-col">
-                    <span className="flex items-center gap-1.5 text-[14px] font-bold text-fg">
+                  <div className="flex min-w-0 flex-col">
+                    <span className="flex min-w-0 items-center gap-1.5 text-[14px] font-bold text-fg">
                       {isGroup && <Icon name="users" size={14} className="shrink-0 text-fg-muted" />}
-                      {name}
+                      <span className="truncate">{name}</span>
                     </span>
                     {isGroup ? (
-                      <span className="text-[11.5px] text-fg-muted">{selectedThread?.bp || 'Group'}</span>
+                      <span className="truncate text-[11.5px] text-fg-muted">{selectedThread?.bp || 'Group'}</span>
                     ) : (
-                      <PhoneNumber value={selected} fontSize="11.5px" />
+                      <PhoneNumber value={selected} fontSize="11.5px" className="truncate whitespace-nowrap" />
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2 overflow-x-auto [&>*]:shrink-0">
                   <IconButton
                     icon="search"
                     size="sm"
@@ -623,7 +651,7 @@ export function ConversationsPage() {
                 </div>
               )}
 
-              <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-5">
                 {threadLoading ? (
                   <div className="text-[13px] text-fg-muted">Loading…</div>
                 ) : threadError ? (

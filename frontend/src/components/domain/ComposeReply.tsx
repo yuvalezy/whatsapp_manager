@@ -11,7 +11,7 @@ import { cn } from '@/lib/cn';
 import { fileToBase64 } from '@/lib/file';
 import { formatBytes, formatPhone } from '@/lib/format';
 import type { ComposeState, DraftReplyResult, GroupParticipant, StoredMessage } from '@/types';
-import { useDraftReply, useSendMessage } from '@/hooks/useDraftReply';
+import { useDraftReply, useSendMessage, useTypingSignal } from '@/hooks/useDraftReply';
 import { useGroupParticipants } from '@/hooks/useGroups';
 
 // A mention the user inserted into the draft: the exact visible `@Name` token,
@@ -119,6 +119,7 @@ export function ComposeReply({
 
   const draftReply = useDraftReply();
   const sendMessage = useSendMessage();
+  const { signalTyping, stopTyping } = useTypingSignal(contactNumber);
 
   const isEngaged = composeState !== 'idle';
   // The AI-draft editor block belongs to the generate→preview→send flow, keyed
@@ -198,6 +199,7 @@ export function ComposeReply({
   };
 
   const resetState = () => {
+    stopTyping();
     setDraft('');
     setEnglishDraft('');
     setTranslatedDraft('');
@@ -262,6 +264,7 @@ export function ComposeReply({
   ) => {
     const messageToSend = text.trim();
     if (!messageToSend && !attachment) return;
+    stopTyping();
     setSendingWhich(which);
     onComposeStateChange('sending');
     onSend?.();
@@ -513,6 +516,7 @@ export function ComposeReply({
               value={draft}
               onChange={(e) => {
                 setDraft(e.target.value);
+                signalTyping();
                 if (composeState === 'idle') onComposeStateChange('composing');
                 refreshMention(e.target.value, e.target.selectionStart);
               }}

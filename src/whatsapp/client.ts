@@ -1,5 +1,6 @@
 import { Client, LocalAuth } from 'whatsapp-web.js';
 import { env, waWebRemotePath } from '../config/env';
+import { alertService } from '../alerts/alert.service';
 import { logger } from '../logger';
 import { registerEvents } from './events';
 import { reclaimSessionLock } from './session-lock';
@@ -79,7 +80,16 @@ class WhatsAppService {
     this.readyAt = new Date();
     this.info = info;
     this.lastQr = null;
-    // Recovered — reset the backoff and cancel any pending reconnect.
+    // Recovered after an actual outage (not the initial connect) — close the
+    // loop for anyone who got a failure alert.
+    if (this.reconnectAttempts > 0) {
+      alertService.send(
+        'WhatsApp Manager recovered',
+        `Client is READY again after ${this.reconnectAttempts} reconnect attempt(s).`,
+        { tags: ['white_check_mark'] },
+      );
+    }
+    // Reset the backoff and cancel any pending reconnect.
     this.reconnectAttempts = 0;
     this.clearReconnectTimer();
   }
@@ -144,6 +154,11 @@ class WhatsAppService {
     if (this.stopped) return;
     if (reason === 'LOGOUT') {
       logger.warn('WhatsApp logged out (device unlinked) — not auto-reconnecting; re-link required');
+      alertService.send(
+        'WhatsApp Manager logged out',
+        'The device was unlinked (LOGOUT). Auto-reconnect will not help — re-scan the QR to re-link.',
+        { priority: 'urgent', tags: ['rotating_light'] },
+      );
       return;
     }
     if (this.reconnectTimer) return; // already scheduled
@@ -151,6 +166,11 @@ class WhatsAppService {
       logger.error(
         { attempts: this.reconnectAttempts },
         'WhatsApp reconnect gave up after max attempts — manual restart required',
+      );
+      alertService.send(
+        'WhatsApp Manager is DOWN',
+        `Reconnect gave up after ${this.reconnectAttempts} attempts (last reason: ${reason}). Manual restart required — message capture is stopped.`,
+        { priority: 'urgent', tags: ['rotating_light'] },
       );
       return;
     }

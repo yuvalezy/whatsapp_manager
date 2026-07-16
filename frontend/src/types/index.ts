@@ -198,6 +198,13 @@ export interface MessageMention {
   name: string | null;
 }
 
+/** One emoji reaction on a message — current-state per (message, sender). */
+export interface MessageReaction {
+  sender_number: string;
+  reaction: string;
+  timestamp: string;
+}
+
 export interface StoredMessage {
   id: string | number;
   message_id: string;
@@ -241,6 +248,9 @@ export interface StoredMessage {
   /** True once the sender revoked this message ("delete for everyone"). Content is retained. */
   is_deleted?: boolean;
   deleted_at?: string | null;
+
+  /** Current emoji reactions on this message (empty when none). */
+  reactions?: MessageReaction[];
 }
 
 export interface CredentialSummary {

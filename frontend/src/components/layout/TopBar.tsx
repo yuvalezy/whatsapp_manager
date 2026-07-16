@@ -38,7 +38,9 @@ export function TopBar({ showMenuButton = false, onMenuClick, className }: TopBa
       )}
     >
       {showMenuButton && (
-        <IconButton icon="menu" size="md" variant="ghost" ariaLabel="Open menu" onClick={onMenuClick} />
+        <div className="lg:hidden">
+          <IconButton icon="menu" size="md" variant="ghost" ariaLabel="Open menu" onClick={onMenuClick} />
+        </div>
       )}
       <div className="flex-1" />
       <ConnectionStatusBadge state={state} />

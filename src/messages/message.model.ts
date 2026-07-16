@@ -66,6 +66,16 @@ export interface RoutableMessage {
   mentions?: RoutableMention[];
 }
 
+/**
+ * One emoji reaction on a stored message, as aggregated into message reads.
+ * Current-state per (message, sender) — see reaction.service.ts.
+ */
+export interface MessageReaction {
+  sender_number: string;
+  reaction: string;
+  timestamp: string;
+}
+
 /** Row shape as returned from the `messages` table. */
 export interface StoredMessage {
   id: string;
@@ -110,6 +120,8 @@ export interface StoredMessage {
   deleted_at: string | null;
   /** @mentions parsed from a group message body, if any. */
   mentions: RoutableMention[] | null;
+  /** Current emoji reactions on this message (empty array when none). */
+  reactions: MessageReaction[];
 }
 
 /** Minimal projection used by the transcription worker. */

@@ -92,6 +92,16 @@ const envSchema = z.object({
   WEBHOOK_SECRET: z.string().optional(),
   WEBHOOK_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
 
+  // ── Ops alerting (terminal connection states) ─────────────────
+  // When set, terminal WhatsApp states (reconnect exhausted, LOGOUT/device
+  // unlinked, auth failure) and post-outage recoveries are POSTed here as
+  // plain text with ntfy-style Title/Priority/Tags headers — works as-is with
+  // an ntfy.sh topic URL, and any webhook that accepts a text body. This is
+  // the only channel that still works when the dead channel is WhatsApp
+  // itself and no dashboard tab is open. Best-effort: never blocks recovery.
+  ALERT_WEBHOOK_URL: z.string().url().optional(),
+  ALERT_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+
   // ── Encrypted credentials store ──────────────────────────────
   // Master key for AES-256-GCM at-rest encryption of provider API keys.
   // base64 32 bytes: `openssl rand -base64 32`. Unset ⇒ store disabled.

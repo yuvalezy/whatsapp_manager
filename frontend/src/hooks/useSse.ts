@@ -97,10 +97,10 @@ export function useSse() {
     });
 
     // In-place update to an already-captured message: a sender edit, a revoke
-    // (soft-delete), or the background transcription worker finishing. Refresh
-    // the affected thread + the list; no notification — it isn't a new inbound
-    // message. (Translation self-invalidates via its own mutation; reactions
-    // have no UI consumer yet, so neither broadcasts here.)
+    // (soft-delete), a reaction added/removed, or the background transcription
+    // worker finishing. Refresh the affected thread + the list; no
+    // notification — it isn't a new inbound message. (Translation
+    // self-invalidates via its own mutation, so it doesn't broadcast here.)
     es.addEventListener('message-updated', (e: MessageEvent) => {
       try {
         const msg = JSON.parse(e.data) as StoredMessage;

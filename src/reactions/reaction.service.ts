@@ -1,5 +1,6 @@
 import { query } from '../db';
 import { logger } from '../logger';
+import { messageService } from '../messages/message.service';
 import { normalizeNumber } from '../utils/phone';
 
 /** Postgres foreign-key-violation SQLSTATE. */
@@ -40,10 +41,12 @@ class ReactionService {
     // touches no other table and simply affects 0 rows for unstored targets, so
     // it needs no FK guard.
     if (!input.reaction) {
-      await query(`DELETE FROM message_reactions WHERE message_id = $1 AND sender_number = $2`, [
-        input.messageId,
-        senderNumber,
-      ]);
+      const { rowCount } = await query(
+        `DELETE FROM message_reactions WHERE message_id = $1 AND sender_number = $2`,
+        [input.messageId, senderNumber],
+      );
+      // Live-update open threads (reactions are aggregated into message reads).
+      if ((rowCount ?? 0) > 0) await messageService.broadcastUpdated(input.messageId);
       return;
     }
 
@@ -55,6 +58,7 @@ class ReactionService {
          DO UPDATE SET reaction = EXCLUDED.reaction, timestamp = EXCLUDED.timestamp`,
         [input.messageId, senderNumber, input.reaction, input.timestamp],
       );
+      await messageService.broadcastUpdated(input.messageId);
     } catch (err) {
       // FK violation ⇒ the target message isn't stored (ignored chat). Drop it
       // to preserve the privacy invariant. Log ids only, never content.

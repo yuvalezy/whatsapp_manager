@@ -97,15 +97,17 @@ export function Sidebar({ activeKey, collapsed = false, onNavigate, onToggleColl
         )}
       </div>
 
-      {/* Collapse toggle */}
-      <button
-        type="button"
-        aria-label="Toggle sidebar"
-        onClick={onToggleCollapse}
-        className="absolute right-[-11px] top-5 flex h-[22px] w-[22px] items-center justify-center rounded-full border border-line bg-nav text-fg-muted transition-colors hover:bg-surface-2"
-      >
-        <Icon name={collapsed ? 'chevronRight' : 'chevronLeft'} size={14} />
-      </button>
+      {/* Collapse toggle — omitted when collapsing isn't offered (mobile drawer). */}
+      {onToggleCollapse && (
+        <button
+          type="button"
+          aria-label="Toggle sidebar"
+          onClick={onToggleCollapse}
+          className="absolute right-[-11px] top-5 flex h-[22px] w-[22px] items-center justify-center rounded-full border border-line bg-nav text-fg-muted transition-colors hover:bg-surface-2"
+        >
+          <Icon name={collapsed ? 'chevronRight' : 'chevronLeft'} size={14} />
+        </button>
+      )}
     </div>
   );
 }
