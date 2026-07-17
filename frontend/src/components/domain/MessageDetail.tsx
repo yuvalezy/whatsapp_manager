@@ -6,12 +6,14 @@ import { Button } from '@/components/ui/Button';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { IconButton } from '@/components/ui/IconButton';
 import { CodeInline } from '@/components/ui/CodeInline';
+import { Icon } from '@/components/ui/Icon';
 import { CopyButton } from '@/components/ui/CopyButton';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { PhoneNumber } from './PhoneNumber';
 import { RelativeTime } from './RelativeTime';
 import { MessageTypeBadge } from './MessageTypeBadge';
 import { api } from '@/lib/api';
+import { formatBytes, extensionForMimetype } from '@/lib/format';
 import { useTranslateMessage } from '@/hooks/useTranslate';
 import { useToast } from '@/components/ui/Toast';
 import type { StoredMessage } from '@/types';
@@ -95,13 +97,25 @@ export function MessageDetail({ open, message, onClose }: MessageDetailProps) {
         <video controls src={url} className="max-h-[320px] w-full rounded-wm border border-line-strong" />
       );
     }
+    const filename = view.media_filename || `attachment.${extensionForMimetype(view.media_mimetype)}`;
+    const sizeLabel = view.media_filesize ? formatBytes(view.media_filesize) : '';
     return (
-      <Button
-        variant="secondary"
-        icon="download"
-        label="Download attachment"
-        onClick={() => window.open(url, '_blank', 'noopener')}
-      />
+      <a
+        href={url}
+        download={filename}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-2.5 rounded-wm border border-line-strong bg-surface px-3 py-2.5 text-fg hover:bg-surface-2"
+        title={filename}
+      >
+        <Icon name="download" size={20} className="shrink-0 text-fg-muted" />
+        <span className="flex min-w-0 flex-col leading-tight">
+          <span className="truncate text-[13px] font-medium">{filename}</span>
+          <span className="text-[11px] text-fg-muted">
+            {[sizeLabel, 'Download'].filter(Boolean).join(' · ')}
+          </span>
+        </span>
+      </a>
     );
   };
 

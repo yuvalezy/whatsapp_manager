@@ -26,9 +26,25 @@ const MIME_EXT: Record<string, string> = {
   'video/quicktime': 'mov',
   'video/webm': 'webm',
   'application/pdf': 'pdf',
+  // Documents — their subtype is too long to survive the generic `sub` fallback
+  // below, so map them explicitly (an .xlsx would otherwise land as `.bin`).
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.oasis.opendocument.spreadsheet': 'ods',
+  'application/vnd.oasis.opendocument.text': 'odt',
+  'text/csv': 'csv',
+  'text/plain': 'txt',
+  'application/json': 'json',
+  'application/zip': 'zip',
+  'application/x-rar-compressed': 'rar',
+  'application/x-7z-compressed': '7z',
 };
 
-function extensionForMimetype(mimetype: string | undefined | null, filename?: string | null): string {
+export function extensionForMimetype(mimetype: string | undefined | null, filename?: string | null): string {
   if (filename && filename.includes('.')) {
     const ext = filename.split('.').pop();
     if (ext && ext.length <= 5) return ext.toLowerCase();
@@ -74,7 +90,7 @@ export async function downloadAndStore(
     const media = await message.downloadMedia();
     if (!media || !media.data) {
       logger.warn({ messageId: message.id?._serialized, mediaType }, 'Media unavailable (expired)');
-      return { mediaType, path: null, mimetype: null, filesize: null, status: 'expired' };
+      return { mediaType, path: null, mimetype: null, filesize: null, filename: null, status: 'expired' };
     }
 
     const buffer = Buffer.from(media.data, 'base64');
@@ -83,7 +99,14 @@ export async function downloadAndStore(
         { messageId: message.id?._serialized, bytes: buffer.length, max: env.MEDIA_MAX_BYTES },
         'Media exceeds MEDIA_MAX_BYTES — skipped',
       );
-      return { mediaType, path: null, mimetype: media.mimetype ?? null, filesize: buffer.length, status: 'failed' };
+      return {
+        mediaType,
+        path: null,
+        mimetype: media.mimetype ?? null,
+        filesize: buffer.length,
+        filename: media.filename ?? null,
+        status: 'failed',
+      };
     }
 
     const ext = extensionForMimetype(media.mimetype, media.filename);
@@ -97,11 +120,12 @@ export async function downloadAndStore(
       path: relPath,
       mimetype: media.mimetype ?? null,
       filesize: buffer.length,
+      filename: media.filename ?? null,
       status: 'downloaded',
     };
   } catch (err) {
     logger.error({ err, messageId: message.id?._serialized, mediaType }, 'Media download failed');
-    return { mediaType, path: null, mimetype: null, filesize: null, status: 'failed' };
+    return { mediaType, path: null, mimetype: null, filesize: null, filename: null, status: 'failed' };
   }
 }
 
@@ -144,11 +168,17 @@ export async function storeOutboundMedia(
     fs.mkdirSync(dir, { recursive: true });
     const relPath = path.join(contactNumber, `${safeName(messageId)}.${ext}`);
     fs.writeFileSync(path.resolve(env.MEDIA_STORAGE_PATH, relPath), buffer);
-    return { mediaType, path: relPath, mimetype, filesize: buffer.length, status: 'downloaded' };
+    return { mediaType, path: relPath, mimetype, filesize: buffer.length, filename: filename ?? null, status: 'downloaded' };
   } catch (err) {
     logger.error({ err, messageId, mediaType }, 'Failed to store outbound media');
-    return { mediaType, path: null, mimetype, filesize: buffer.length, status: 'failed' };
+    return { mediaType, path: null, mimetype, filesize: buffer.length, filename: filename ?? null, status: 'failed' };
   }
 }
 
-export const mediaService = { downloadAndStore, absoluteMediaPath, isAudioType, storeOutboundMedia };
+export const mediaService = {
+  downloadAndStore,
+  absoluteMediaPath,
+  isAudioType,
+  storeOutboundMedia,
+  extensionForMimetype,
+};

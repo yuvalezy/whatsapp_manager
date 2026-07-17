@@ -140,6 +140,18 @@ const MIME_EXTENSIONS: Record<string, string> = {
   'audio/wav': 'wav',
   'audio/webm': 'webm',
   'application/pdf': 'pdf',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.oasis.opendocument.spreadsheet': 'ods',
+  'application/vnd.oasis.opendocument.text': 'odt',
+  'text/csv': 'csv',
+  'text/plain': 'txt',
+  'application/json': 'json',
+  'application/zip': 'zip',
 };
 
 /** Best-effort file extension for a media mimetype (used for download filenames). */

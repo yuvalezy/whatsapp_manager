@@ -10,6 +10,8 @@ export interface RoutableMedia {
   path: string | null; // relative to MEDIA_STORAGE_PATH; null when not on disk
   mimetype: string | null;
   filesize: number | null;
+  /** Original filename as reported by WhatsApp (documents only); null otherwise. */
+  filename: string | null;
   status: MediaStatus;
 }
 
@@ -98,6 +100,7 @@ export interface StoredMessage {
   media_path: string | null;
   media_mimetype: string | null;
   media_filesize: number | null;
+  media_filename: string | null;
   media_status: MediaStatus;
 
   transcript: string | null;

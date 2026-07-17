@@ -26,7 +26,7 @@ const selectCols = (alias = 'messages') => `
   id, message_id, chat_id, contact_number, sender_number, sender_name,
   body, message_type, direction, timestamp, created_at, updated_at, metadata,
   detected_language,
-  media_type, media_path, media_mimetype, media_filesize, media_status,
+  media_type, media_path, media_mimetype, media_filesize, media_filename, media_status,
   transcript, transcript_language, transcript_translated, transcription_status,
   translated_body, translation_status,
   ack, reply_to_message_id, edited_at, is_deleted, deleted_at, mentions,
@@ -111,8 +111,8 @@ class MessageService {
          (message_id, chat_id, contact_number, sender_number, sender_name, body,
           message_type, direction, timestamp, metadata, detected_language,
           media_type, media_path, media_mimetype, media_filesize, media_status,
-          transcription_status, ack, reply_to_message_id, mentions)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+          transcription_status, ack, reply_to_message_id, mentions, media_filename)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        ON CONFLICT (message_id) DO NOTHING`,
       [
         msg.messageId,
@@ -135,6 +135,7 @@ class MessageService {
         msg.ack ?? null,
         msg.replyToMessageId ?? null,
         msg.mentions?.length ? JSON.stringify(msg.mentions) : null,
+        media?.filename ?? null,
       ],
     );
     const inserted = (rowCount ?? 0) > 0;

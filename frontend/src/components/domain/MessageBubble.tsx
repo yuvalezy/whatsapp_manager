@@ -6,7 +6,7 @@ import { MessageTypeBadge } from './MessageTypeBadge';
 import { MessageBubbleActions } from './MessageBubbleActions';
 import { ImageLightbox } from './ImageLightbox';
 import { cn } from '@/lib/cn';
-import { formatDateTime, formatPhone } from '@/lib/format';
+import { formatDateTime, formatPhone, formatBytes, extensionForMimetype } from '@/lib/format';
 import { api } from '@/lib/api';
 import type { MessageMention, MessageReaction, StoredMessage } from '@/types';
 
@@ -408,15 +408,24 @@ function BubbleMedia({ message: msg }: { message: StoredMessage }) {
   if (type === 'video') {
     return <video controls src={url} className="max-h-[280px] w-full rounded-[10px]" />;
   }
+  const filename = msg.media_filename || `attachment.${extensionForMimetype(msg.media_mimetype)}`;
+  const sizeLabel = msg.media_filesize ? formatBytes(msg.media_filesize) : '';
   return (
     <a
       href={url}
+      download={filename}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center gap-2 rounded-[10px] border border-line-strong bg-surface px-3 py-2 text-[12.5px] text-fg hover:bg-surface-2"
+      className="flex max-w-[280px] items-center gap-2.5 rounded-[10px] border border-line-strong bg-surface px-3 py-2 text-fg hover:bg-surface-2"
+      title={filename}
     >
-      <Icon name="fileText" size={16} className="shrink-0 text-fg-muted" />
-      <span className="truncate">Download attachment</span>
+      <Icon name="fileText" size={20} className="shrink-0 text-fg-muted" />
+      <span className="flex min-w-0 flex-col leading-tight">
+        <span className="truncate text-[12.5px] font-medium">{filename}</span>
+        <span className="text-[11px] text-fg-muted">
+          {[sizeLabel, 'Download'].filter(Boolean).join(' · ')}
+        </span>
+      </span>
     </a>
   );
 }

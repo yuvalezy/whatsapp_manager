@@ -4,7 +4,7 @@ import { messageService, ExportRow } from './message.service';
 import { StoredMessage } from './message.model';
 import { translationService } from '../enrichment/translation.service';
 import { draftReplyService } from '../enrichment/draft-reply.service';
-import { absoluteMediaPath } from '../media/media.service';
+import { absoluteMediaPath, extensionForMimetype } from '../media/media.service';
 import { whitelistService } from '../whitelist/whitelist.service';
 import { groupService } from '../groups/group.service';
 import { readStateService } from '../reads/read-state.service';
@@ -574,6 +574,21 @@ messagesRouter.get('/:id/media', async (req, res, next) => {
     }
     const { size } = await fs.promises.stat(abs);
     if (msg.media_mimetype) res.setHeader('Content-Type', msg.media_mimetype);
+    // Advertise a filename so downloads keep the real name/extension instead of
+    // the URL's last segment (`media`) → a guessed `.bin`. Prefer WhatsApp's
+    // reported filename; otherwise synthesize one from the (correctly stored)
+    // mimetype — NOT the on-disk basename, whose extension can be a stale `.bin`
+    // for messages captured before office mimetypes were mapped. `inline` (not
+    // `attachment`) so images/audio/video still render in-place; the filename is
+    // honoured when the browser does download. filename* carries UTF-8 for
+    // non-ASCII names.
+    const downloadName =
+      msg.media_filename || `attachment-${id}.${extensionForMimetype(msg.media_mimetype)}`;
+    const asciiName = downloadName.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
+    );
     // Advertise range support so browsers can seek audio/video (Safari refuses
     // to play <video>/<audio> without 206 Partial Content responses).
     res.setHeader('Accept-Ranges', 'bytes');

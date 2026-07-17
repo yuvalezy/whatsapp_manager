@@ -224,6 +224,7 @@ export interface StoredMessage {
   media_type?: string | null;
   media_mimetype?: string | null;
   media_filesize?: number | null;
+  media_filename?: string | null;
   media_status?: MediaStatus;
 
   transcript?: string | null;
